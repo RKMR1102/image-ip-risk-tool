@@ -8,10 +8,12 @@ const referencePreview = document.getElementById("referencePreview");
 const designHint = document.getElementById("designHint");
 const referenceHint = document.getElementById("referenceHint");
 
-const elementOverlap = document.getElementById("elementOverlap");
-const styleOverlap = document.getElementById("styleOverlap");
-const tracingRisk = document.getElementById("tracingRisk");
-const commercialUsage = document.getElementById("commercialUsage");
+const patternType = document.getElementById("patternType");
+const brandRisk = document.getElementById("brandRisk");
+const elementDifferenceLevel = document.getElementById("elementDifferenceLevel");
+const visualDifference = document.getElementById("visualDifference");
+const mainElementDifferent = document.getElementById("mainElementDifferent");
+const aiOutlineRisk = document.getElementById("aiOutlineRisk");
 const notesInput = document.getElementById("notesInput");
 
 const riskBanner = document.getElementById("riskBanner");
@@ -30,6 +32,14 @@ const state = {
   designImage: null,
   referenceImage: null,
   lastResult: null,
+};
+
+const THRESHOLDS = {
+  colorDifferentMax: 0.78,
+  compositionDifferentMax: 0.8,
+  styleDifferentMax: 0.8,
+  strongSimilarity: 0.88,
+  closeToBoundary: 0.05,
 };
 
 designInput.addEventListener("change", (event) => {
@@ -57,17 +67,18 @@ analyzeButton.addEventListener("click", async () => {
   try {
     const metrics = await compareImages(state.designImage, state.referenceImage);
     const inputs = {
-      elementOverlap: elementOverlap.value,
-      styleOverlap: styleOverlap.value,
-      tracingRisk: tracingRisk.value,
-      commercialUsage: commercialUsage.value,
+      patternType: patternType.value,
+      brandRisk: brandRisk.value,
+      elementDifferenceLevel: elementDifferenceLevel.value,
+      visualDifference: visualDifference.value,
+      mainElementDifferent: mainElementDifferent.value,
+      aiOutlineRisk: aiOutlineRisk.value,
       notes: notesInput.value.trim(),
       designFile: designHint.textContent,
       referenceFile: referenceHint.textContent,
     };
 
     const evaluation = evaluateRisk(metrics, inputs);
-
     state.lastResult = {
       analyzedAt: new Date().toLocaleString("zh-CN", { hour12: false }),
       inputs,
@@ -152,18 +163,19 @@ async function compareImages(designImage, referenceImage) {
   const edgeSimilarity = cosineSimilarity(edgesA, edgesB);
   const colorSimilarity = histogramSimilarity(designData.pixels, referenceData.pixels);
   const sizeRatio = getSizeRatio(designImage, referenceImage);
-
+  const compositionSimilarity = shapeSimilarity * 0.7 + sizeRatio * 0.3;
   const overallSimilarity = (
-    shapeSimilarity * 0.4 +
-    edgeSimilarity * 0.35 +
-    colorSimilarity * 0.25
+    colorSimilarity * 0.34 +
+    compositionSimilarity * 0.33 +
+    edgeSimilarity * 0.33
   );
 
   return {
-    shapeSimilarity,
-    edgeSimilarity,
     colorSimilarity,
+    compositionSimilarity,
+    edgeSimilarity,
     overallSimilarity,
+    shapeSimilarity,
     sizeRatio,
   };
 }
@@ -305,116 +317,149 @@ function getSizeRatio(imageA, imageB) {
 }
 
 function evaluateRisk(metrics, inputs) {
-  let score = 0;
   const riskPointsList = [];
   const suggestionList = [];
 
-  score += metrics.overallSimilarity * 45;
-  score += metrics.shapeSimilarity * 25;
-  score += metrics.edgeSimilarity * 15;
-  score += metrics.colorSimilarity * 10;
+  const colorDifferent = metrics.colorSimilarity < THRESHOLDS.colorDifferentMax;
+  const compositionDifferent = metrics.compositionSimilarity < THRESHOLDS.compositionDifferentMax;
+  const styleDifferent = metrics.edgeSimilarity < THRESHOLDS.styleDifferentMax;
+  const differentCount = [colorDifferent, compositionDifferent, styleDifferent]
+    .filter(Boolean)
+    .length;
 
-  if (metrics.overallSimilarity > 0.82) {
-    riskPointsList.push("两张图片整体视觉接近度较高，容易形成可替代印象。");
-    suggestionList.push("优先重做主体构图，调整主体位置关系、朝向和主要留白。");
+  if (inputs.brandRisk === "yes") {
+    riskPointsList.push("已标记含知名品牌或IP元素，按规则直接判定为高风险。");
+    suggestionList.push("删除品牌/IP相关元素，替换为原创主体和原创细节后再重新评估。");
+    return buildResult({
+      score: 98,
+      level: "high",
+      riskPointsList,
+      suggestionList,
+      differentCount,
+      colorDifferent,
+      compositionDifferent,
+      styleDifferent,
+    });
   }
 
-  if (metrics.shapeSimilarity > 0.86) {
-    score += 10;
-    riskPointsList.push("主体轮廓与构图形态高度接近，存在过度参考或临摹风险。");
-    suggestionList.push("修改主体外轮廓和关键比例，尤其是易被识别的轮廓节奏。");
+  if (inputs.aiOutlineRisk === "yes") {
+    riskPointsList.push("已标记AI保留原轮廓，按规则直接判定为高风险。");
+    suggestionList.push("不要沿用原图轮廓重绘，建议重做主体外轮廓和整体画面逻辑。");
+    return buildResult({
+      score: 96,
+      level: "high",
+      riskPointsList,
+      suggestionList,
+      differentCount,
+      colorDifferent,
+      compositionDifferent,
+      styleDifferent,
+    });
   }
 
-  if (metrics.edgeSimilarity > 0.84) {
-    score += 8;
-    riskPointsList.push("关键边缘走向接近，说明线条组织和细节结构相似。");
-    suggestionList.push("更换线条粗细、纹理组织和局部细节处理方式。");
+  let overallLevel = "low";
+  if (differentCount <= 1) {
+    overallLevel = "high";
+    riskPointsList.push("配色、构图、画法三项中仅0到1项不同，按规则属于高风险。");
+    suggestionList.push("至少把三项中的两项明显拉开，建议优先调整构图，再改配色或画法。");
+  } else if (differentCount === 2) {
+    overallLevel = "medium";
+    riskPointsList.push("配色、构图、画法三项中有2项不同，按规则属于中风险。");
+  } else {
+    overallLevel = "low";
+    riskPointsList.push("配色、构图、画法三项均不同，按规则属于低风险。");
   }
 
-  if (metrics.colorSimilarity > 0.88) {
-    score += 6;
-    riskPointsList.push("主色和辅色分布高度相似，会强化整体近似印象。");
-    suggestionList.push("替换主辅色关系，拉开明度层次并重设视觉重心。");
+  let patternLevel = "low";
+  if (inputs.patternType === "single") {
+    if (inputs.mainElementDifferent === "no" && inputs.visualDifference === "no") {
+      patternLevel = "high";
+      riskPointsList.push("单一图案中主体没变且视觉接近，按规则属于高风险。");
+      suggestionList.push("更换主要图案元素，或显著调整主体轮廓、动作、表情和关键细节。");
+    } else if (inputs.mainElementDifferent === "no" && inputs.visualDifference === "yes") {
+      patternLevel = "medium";
+      riskPointsList.push("单一图案中主体没变但视觉不同，按规则属于中风险。");
+      suggestionList.push("虽然视觉有所调整，但建议继续拉开主体差异，避免停留在同一主体的小改。");
+    } else if (inputs.mainElementDifferent === "yes" && inputs.visualDifference === "yes") {
+      patternLevel = "low";
+      riskPointsList.push("单一图案中主体已变化且视觉不同，按规则属于低风险。");
+    } else {
+      patternLevel = "medium";
+      riskPointsList.push("单一图案中主体已变化，但视觉印象仍较接近，按规则从严归为中风险。");
+      suggestionList.push("主体虽然已换，但还应继续调整风格或构图，拉开整体视觉印象。");
+    }
+  } else {
+    if (inputs.elementDifferenceLevel === "lt50") {
+      patternLevel = "high";
+      riskPointsList.push("组合图案的元素差异比例低于50%，按规则属于高风险。");
+      suggestionList.push("增加新元素或替换原有元素组合，确保整体组成元素至少50%不同。");
+    } else if (inputs.visualDifference === "no") {
+      patternLevel = "medium";
+      riskPointsList.push("组合图案元素差异已达到50%以上，但视觉印象仍接近，按规则属于中风险。");
+      suggestionList.push("进一步重做相同元素的轮廓、比例、姿态或表现方式，拉开视觉印象。");
+    } else {
+      patternLevel = "low";
+      riskPointsList.push("组合图案元素差异达到50%以上，且视觉印象不同，按规则属于低风险。");
+    }
   }
 
-  if (metrics.sizeRatio > 0.95) {
-    score += 4;
-    riskPointsList.push("画幅比例非常接近，构图借鉴痕迹更明显。");
-    suggestionList.push("改变裁切方式或版式比例，重新组织主体与背景关系。");
-  }
-
-  if (inputs.elementOverlap === "medium") {
-    score += 8;
-    riskPointsList.push("人工判断核心元素存在中等重合，需要重点核查标志性对象。");
-  } else if (inputs.elementOverlap === "high") {
-    score += 16;
-    riskPointsList.push("人工判断核心元素重合较高，容易触发侵权争议。");
-    suggestionList.push("替换核心元素组合，不只改细节，还要改题材关系和动作叙事。");
-  }
-
-  if (inputs.styleOverlap === "medium") {
-    score += 5;
-  } else if (inputs.styleOverlap === "high") {
-    score += 10;
-    riskPointsList.push("整体表现风格过于接近，可能构成视觉表达近似。");
-    suggestionList.push("更换笔触系统、纹理语言或平涂与描边方案。");
-  }
-
-  if (inputs.tracingRisk === "suspected") {
-    score += 12;
-    riskPointsList.push("存在描摹嫌疑，建议回看草图和分层文件。");
-    suggestionList.push("保留草图、分层文件和重绘过程，证明独立创作路径。");
-  } else if (inputs.tracingRisk === "yes") {
-    score += 28;
-    riskPointsList.push("已确认存在直接描摹或沿轮廓改图，属于高风险行为。");
-    suggestionList.push("建议直接废弃当前版本，重新独立创作，不要在原轮廓上微调。");
-  }
-
-  if (inputs.commercialUsage === "campaign") {
-    score += 6;
-  } else if (inputs.commercialUsage === "product") {
-    score += 12;
-    riskPointsList.push("素材将用于商品销售，商业化场景会放大侵权后果。");
-  }
-
-  if (inputs.notes.includes("借鉴") || inputs.notes.includes("参考")) {
-    suggestionList.push("如果确实参考了他作，请记录参考边界，并确认未复制可识别表达。");
-  }
-
-  score = Math.min(100, Math.round(score));
-
-  let level = "low";
-  let label = "低风险";
-
-  if (score >= 75) {
-    level = "high";
-    label = "高风险";
-  } else if (score >= 45) {
-    level = "medium";
-    label = "中风险";
-  }
-
-  if (riskPointsList.length === 0) {
-    riskPointsList.push("当前自动指标未发现明显高重合特征，但仍建议人工复核标志性元素。");
+  if (inputs.notes.includes("参考") || inputs.notes.includes("借鉴")) {
+    suggestionList.push("既然存在参考关系，建议保留草图和修改过程，便于后续人工复核。");
   }
 
   if (suggestionList.length === 0) {
-    suggestionList.push("继续拉开主体形态、配色和场景关系，并保留创作过程记录。");
+    suggestionList.push("继续保持配色、构图和画法上的差异，并保留创作过程记录。");
   }
+
+  const level = highestLevel(overallLevel, patternLevel);
+  const score = scoreFromLevel(level, metrics.overallSimilarity);
+
+  return buildResult({
+    score,
+    level,
+    riskPointsList,
+    suggestionList,
+    differentCount,
+    colorDifferent,
+    compositionDifferent,
+    styleDifferent,
+  });
+}
+
+function buildResult({
+  score,
+  level,
+  riskPointsList,
+  suggestionList,
+  differentCount,
+  colorDifferent,
+  compositionDifferent,
+  styleDifferent,
+}) {
+  const label =
+    level === "high" ? "高风险" :
+    level === "medium" ? "中风险" :
+    "低风险";
 
   const reviewAdviceText =
     level === "high"
-      ? "建议立即转法务复核"
+      ? "建议立即转人工复核并重做"
       : level === "medium"
-        ? "建议设计主管复核后再投放"
+        ? "建议设计主管复核后再修改"
         : "可进入人工抽检流程";
 
   const usageAdviceText =
     level === "high"
-      ? "不建议直接商用"
+      ? "不建议直接使用"
       : level === "medium"
-        ? "修改后再评估是否商用"
+        ? "修改后再评估是否可用"
         : "保留过程文件后可谨慎使用";
+
+  const differenceSummary =
+    `配色${colorDifferent ? "不同" : "接近"}、` +
+    `构图${compositionDifferent ? "不同" : "接近"}、` +
+    `画法${styleDifferent ? "不同" : "接近"}，` +
+    `共 ${differentCount} 项满足差异要求。`;
 
   return {
     score,
@@ -422,6 +467,7 @@ function evaluateRisk(metrics, inputs) {
     label,
     reviewAdviceText,
     usageAdviceText,
+    differenceSummary,
     riskPoints: uniqueList(riskPointsList),
     suggestions: uniqueList(suggestionList),
   };
@@ -431,13 +477,29 @@ function uniqueList(items) {
   return [...new Set(items)];
 }
 
+function highestLevel(first, second) {
+  const rank = { low: 1, medium: 2, high: 3 };
+  return rank[first] >= rank[second] ? first : second;
+}
+
+function scoreFromLevel(level, overallSimilarity) {
+  const baseline = Math.round(overallSimilarity * 100);
+  if (level === "high") {
+    return Math.max(85, baseline);
+  }
+  if (level === "medium") {
+    return Math.max(58, Math.min(74, baseline));
+  }
+  return Math.min(38, baseline);
+}
+
 function renderResult(metrics, evaluation) {
   riskBanner.dataset.level = evaluation.level;
   riskBanner.querySelector(".risk-label").textContent = evaluation.label;
   riskScore.textContent = `${evaluation.score}分`;
 
-  shapeMetric.textContent = formatPercent(metrics.shapeSimilarity);
-  colorMetric.textContent = formatPercent(metrics.colorSimilarity);
+  shapeMetric.textContent = formatPercent(metrics.colorSimilarity);
+  colorMetric.textContent = formatPercent(metrics.compositionSimilarity);
   edgeMetric.textContent = formatPercent(metrics.edgeSimilarity);
   overallMetric.textContent = formatPercent(metrics.overallSimilarity);
   reviewAdvice.textContent = evaluation.reviewAdviceText;
@@ -447,11 +509,9 @@ function renderResult(metrics, evaluation) {
   suggestions.innerHTML = evaluation.suggestions.map((item) => `<li>${item}</li>`).join("");
 
   analysisSummary.textContent =
-    `综合接近度 ${formatPercent(metrics.overallSimilarity)}，` +
-    `结构相似度 ${formatPercent(metrics.shapeSimilarity)}，` +
-    `边缘相似度 ${formatPercent(metrics.edgeSimilarity)}，` +
-    `颜色相似度 ${formatPercent(metrics.colorSimilarity)}。` +
-    " 该结果适合作为设计初筛，正式上线前建议补充人工复核、白名单图库校验和法务审批。";
+    `${evaluation.differenceSummary}` +
+    ` 当前系统将颜色直方图近似为配色接近度，将结构与画幅比例近似为构图接近度，将边缘组织近似为画法接近度。` +
+    ` 整体视觉接近度为 ${formatPercent(metrics.overallSimilarity)}。`;
 }
 
 function renderFallback(risks, suggestionItems, level, score) {
@@ -466,6 +526,8 @@ function renderFallback(risks, suggestionItems, level, score) {
   usageAdvice.textContent = "待分析";
   riskPoints.innerHTML = risks.map((item) => `<li>${item}</li>`).join("");
   suggestions.innerHTML = suggestionItems.map((item) => `<li>${item}</li>`).join("");
+  analysisSummary.textContent =
+    "系统会根据配色、构图、画法三项整体视觉印象，以及单一/组合图案元素规则进行判定。";
 }
 
 function formatPercent(value) {
@@ -485,17 +547,20 @@ function exportReport(result) {
     `审核建议：${result.evaluation.reviewAdviceText}`,
     `使用建议：${result.evaluation.usageAdviceText}`,
     "",
-    "二、相似度指标",
-    `结构相似度：${formatPercent(result.metrics.shapeSimilarity)}`,
-    `颜色相似度：${formatPercent(result.metrics.colorSimilarity)}`,
-    `边缘相似度：${formatPercent(result.metrics.edgeSimilarity)}`,
-    `综合接近度：${formatPercent(result.metrics.overallSimilarity)}`,
+    "二、图像相似度维度",
+    `配色接近度：${formatPercent(result.metrics.colorSimilarity)}`,
+    `构图接近度：${formatPercent(result.metrics.compositionSimilarity)}`,
+    `画法接近度：${formatPercent(result.metrics.edgeSimilarity)}`,
+    `整体视觉接近度：${formatPercent(result.metrics.overallSimilarity)}`,
+    `规则摘要：${result.evaluation.differenceSummary}`,
     "",
     "三、人工补充项",
-    `核心元素重合度：${translateOption(result.inputs.elementOverlap)}`,
-    `表现风格重合度：${translateOption(result.inputs.styleOverlap)}`,
-    `是否存在描摹：${translateTracing(result.inputs.tracingRisk)}`,
-    `用途场景：${translateUsage(result.inputs.commercialUsage)}`,
+    `图案类型：${translatePatternType(result.inputs.patternType)}`,
+    `是否含知名品牌/IP元素：${result.inputs.brandRisk === "yes" ? "是" : "否"}`,
+    `AI是否保留原轮廓：${result.inputs.aiOutlineRisk === "yes" ? "是" : "否"}`,
+    `元素差异比例：${translateElementDifference(result.inputs.elementDifferenceLevel)}`,
+    `相同元素视觉印象是否不同：${result.inputs.visualDifference === "yes" ? "是" : "否"}`,
+    `主要图案元素是否不同：${result.inputs.mainElementDifferent === "yes" ? "是" : "否"}`,
     `补充说明：${result.inputs.notes || "无"}`,
     "",
     "四、风险关注点",
@@ -505,7 +570,7 @@ function exportReport(result) {
     ...result.evaluation.suggestions.map((item, index) => `${index + 1}. ${item}`),
     "",
     "六、说明",
-    "本结果为规则引擎初筛结论，不构成正式法律意见。建议对中高风险结果执行人工复核与法务复审。",
+    "本结果基于配色、构图、画法及单一/组合图案元素规则进行初筛，不构成正式法律意见。",
   ].join("\n");
 
   const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
@@ -517,32 +582,10 @@ function exportReport(result) {
   URL.revokeObjectURL(url);
 }
 
-function translateOption(value) {
-  if (value === "high") {
-    return "高";
-  }
-  if (value === "medium") {
-    return "中";
-  }
-  return "低";
+function translatePatternType(value) {
+  return value === "composite" ? "组合图案" : "单一图案";
 }
 
-function translateTracing(value) {
-  if (value === "yes") {
-    return "是";
-  }
-  if (value === "suspected") {
-    return "疑似";
-  }
-  return "否";
-}
-
-function translateUsage(value) {
-  if (value === "product") {
-    return "商品销售";
-  }
-  if (value === "campaign") {
-    return "商业推广";
-  }
-  return "内部测试/学习";
+function translateElementDifference(value) {
+  return value === "ge50" ? "50%及以上不同" : "低于50%不同";
 }
