@@ -8,12 +8,13 @@ const referencePreview = document.getElementById("referencePreview");
 const designHint = document.getElementById("designHint");
 const referenceHint = document.getElementById("referenceHint");
 
-const patternType = document.getElementById("patternType");
-const brandRisk = document.getElementById("brandRisk");
-const elementDifferenceLevel = document.getElementById("elementDifferenceLevel");
-const visualDifference = document.getElementById("visualDifference");
-const mainElementDifferent = document.getElementById("mainElementDifferent");
-const aiOutlineRisk = document.getElementById("aiOutlineRisk");
+const backendStatus = document.getElementById("backendStatus");
+const patternTypeValue = document.getElementById("patternTypeValue");
+const brandRiskValue = document.getElementById("brandRiskValue");
+const elementDifferenceValue = document.getElementById("elementDifferenceValue");
+const visualDifferenceValue = document.getElementById("visualDifferenceValue");
+const mainElementDifferentValue = document.getElementById("mainElementDifferentValue");
+const aiOutlineRiskValue = document.getElementById("aiOutlineRiskValue");
 const notesInput = document.getElementById("notesInput");
 
 const riskBanner = document.getElementById("riskBanner");
@@ -38,8 +39,6 @@ const THRESHOLDS = {
   colorDifferentMax: 0.78,
   compositionDifferentMax: 0.8,
   styleDifferentMax: 0.8,
-  strongSimilarity: 0.88,
-  closeToBoundary: 0.05,
 };
 
 designInput.addEventListener("change", (event) => {
@@ -58,46 +57,52 @@ analyzeButton.addEventListener("click", async () => {
       "pending",
       0
     );
+    setBackendStatus("后端状态：等待分析", "");
     return;
   }
 
   analyzeButton.disabled = true;
   analyzeButton.textContent = "分析中...";
+  setBackendStatus("后端状态：正在调用自动识别接口...", "");
 
   try {
     const metrics = await compareImages(state.designImage, state.referenceImage);
-    const inputs = {
-      patternType: patternType.value,
-      brandRisk: brandRisk.value,
-      elementDifferenceLevel: elementDifferenceLevel.value,
-      visualDifference: visualDifference.value,
-      mainElementDifferent: mainElementDifferent.value,
-      aiOutlineRisk: aiOutlineRisk.value,
+    const designDataUrl = imageToUploadDataUrl(state.designImage);
+    const referenceDataUrl = imageToUploadDataUrl(state.referenceImage);
+    const autoAssessment = await analyzeWithServer({
+      designImage: designDataUrl,
+      referenceImage: referenceDataUrl,
       notes: notesInput.value.trim(),
-      designFile: designHint.textContent,
-      referenceFile: referenceHint.textContent,
-    };
+    });
 
-    const evaluation = evaluateRisk(metrics, inputs);
+    renderAutoAssessment(autoAssessment);
+
+    const evaluation = evaluateRisk(metrics, autoAssessment);
     state.lastResult = {
       analyzedAt: new Date().toLocaleString("zh-CN", { hour12: false }),
-      inputs,
       metrics,
+      assessment: autoAssessment,
       evaluation,
+      designFile: designHint.textContent,
+      referenceFile: referenceHint.textContent,
+      notes: notesInput.value.trim(),
     };
 
-    renderResult(metrics, evaluation);
+    renderResult(metrics, evaluation, autoAssessment);
+    setBackendStatus(`后端状态：识别完成（模型：${autoAssessment.model}）`, "success");
   } catch (error) {
     renderFallback(
-      ["图片分析失败，可能是文件损坏或浏览器不支持。"],
-      ["请尝试更换图片格式，或压缩后再次上传。"],
+      ["自动识别失败，当前无法完成完整分析。"],
+      ["请检查 Vercel 是否已配置 OPENAI_API_KEY，并确认接口部署成功。"],
       "pending",
       0
     );
+    resetAutoAssessment();
     analysisSummary.textContent = `错误信息：${error.message}`;
+    setBackendStatus(`后端状态：识别失败 - ${error.message}`, "error");
   } finally {
     analyzeButton.disabled = false;
-    analyzeButton.textContent = "开始分析";
+    analyzeButton.textContent = "开始自动分析";
   }
 });
 
@@ -135,6 +140,9 @@ function handleImageSelection(file, type) {
       referencePreview.hidden = false;
       referenceHint.textContent = file.name;
     }
+
+    resetAutoAssessment();
+    setBackendStatus("后端状态：等待分析", "");
   };
 
   reader.readAsDataURL(file);
@@ -147,6 +155,37 @@ function loadImage(src) {
     image.onerror = () => reject(new Error("无法读取图片"));
     image.src = src;
   });
+}
+
+function imageToUploadDataUrl(image) {
+  const maxSize = 1024;
+  const canvas = document.createElement("canvas");
+  const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
+  canvas.width = Math.round(image.width * scale);
+  canvas.height = Math.round(image.height * scale);
+  const context = canvas.getContext("2d");
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.86);
+}
+
+async function analyzeWithServer(payload) {
+  const response = await fetch("/api/analyze", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || "接口调用失败");
+  }
+
+  return {
+    ...data.assessment,
+    model: data.model || "unknown",
+  };
 }
 
 async function compareImages(designImage, referenceImage) {
@@ -175,8 +214,6 @@ async function compareImages(designImage, referenceImage) {
     compositionSimilarity,
     edgeSimilarity,
     overallSimilarity,
-    shapeSimilarity,
-    sizeRatio,
   };
 }
 
@@ -316,45 +353,25 @@ function getSizeRatio(imageA, imageB) {
   return maxArea === 0 ? 0 : minArea / maxArea;
 }
 
-function evaluateRisk(metrics, inputs) {
+function evaluateRisk(metrics, assessment) {
   const riskPointsList = [];
   const suggestionList = [];
 
   const colorDifferent = metrics.colorSimilarity < THRESHOLDS.colorDifferentMax;
   const compositionDifferent = metrics.compositionSimilarity < THRESHOLDS.compositionDifferentMax;
   const styleDifferent = metrics.edgeSimilarity < THRESHOLDS.styleDifferentMax;
-  const differentCount = [colorDifferent, compositionDifferent, styleDifferent]
-    .filter(Boolean)
-    .length;
+  const differentCount = [colorDifferent, compositionDifferent, styleDifferent].filter(Boolean).length;
 
-  if (inputs.brandRisk === "yes") {
-    riskPointsList.push("已标记含知名品牌或IP元素，按规则直接判定为高风险。");
+  if (assessment.brandRisk === "yes") {
+    riskPointsList.push(`自动识别到品牌/IP高风险元素：${assessment.brandOrIpNames.join("、") || "未命名实体"}`);
     suggestionList.push("删除品牌/IP相关元素，替换为原创主体和原创细节后再重新评估。");
-    return buildResult({
-      score: 98,
-      level: "high",
-      riskPointsList,
-      suggestionList,
-      differentCount,
-      colorDifferent,
-      compositionDifferent,
-      styleDifferent,
-    });
+    return buildResult(98, "high", differentCount, colorDifferent, compositionDifferent, styleDifferent, riskPointsList, suggestionList);
   }
 
-  if (inputs.aiOutlineRisk === "yes") {
-    riskPointsList.push("已标记AI保留原轮廓，按规则直接判定为高风险。");
+  if (assessment.aiOutlineRisk === "yes") {
+    riskPointsList.push("自动识别判断 AI 结果保留了原图轮廓，按规则直接判定为高风险。");
     suggestionList.push("不要沿用原图轮廓重绘，建议重做主体外轮廓和整体画面逻辑。");
-    return buildResult({
-      score: 96,
-      level: "high",
-      riskPointsList,
-      suggestionList,
-      differentCount,
-      colorDifferent,
-      compositionDifferent,
-      styleDifferent,
-    });
+    return buildResult(96, "high", differentCount, colorDifferent, compositionDifferent, styleDifferent, riskPointsList, suggestionList);
   }
 
   let overallLevel = "low";
@@ -366,22 +383,20 @@ function evaluateRisk(metrics, inputs) {
     overallLevel = "medium";
     riskPointsList.push("配色、构图、画法三项中有2项不同，按规则属于中风险。");
   } else {
-    overallLevel = "low";
     riskPointsList.push("配色、构图、画法三项均不同，按规则属于低风险。");
   }
 
   let patternLevel = "low";
-  if (inputs.patternType === "single") {
-    if (inputs.mainElementDifferent === "no" && inputs.visualDifference === "no") {
+  if (assessment.patternType === "single") {
+    if (assessment.mainElementDifferent === "no" && assessment.visualDifference === "no") {
       patternLevel = "high";
       riskPointsList.push("单一图案中主体没变且视觉接近，按规则属于高风险。");
       suggestionList.push("更换主要图案元素，或显著调整主体轮廓、动作、表情和关键细节。");
-    } else if (inputs.mainElementDifferent === "no" && inputs.visualDifference === "yes") {
+    } else if (assessment.mainElementDifferent === "no" && assessment.visualDifference === "yes") {
       patternLevel = "medium";
       riskPointsList.push("单一图案中主体没变但视觉不同，按规则属于中风险。");
       suggestionList.push("虽然视觉有所调整，但建议继续拉开主体差异，避免停留在同一主体的小改。");
-    } else if (inputs.mainElementDifferent === "yes" && inputs.visualDifference === "yes") {
-      patternLevel = "low";
+    } else if (assessment.mainElementDifferent === "yes" && assessment.visualDifference === "yes") {
       riskPointsList.push("单一图案中主体已变化且视觉不同，按规则属于低风险。");
     } else {
       patternLevel = "medium";
@@ -389,22 +404,25 @@ function evaluateRisk(metrics, inputs) {
       suggestionList.push("主体虽然已换，但还应继续调整风格或构图，拉开整体视觉印象。");
     }
   } else {
-    if (inputs.elementDifferenceLevel === "lt50") {
+    if (assessment.elementDifferenceLevel === "lt50") {
       patternLevel = "high";
       riskPointsList.push("组合图案的元素差异比例低于50%，按规则属于高风险。");
       suggestionList.push("增加新元素或替换原有元素组合，确保整体组成元素至少50%不同。");
-    } else if (inputs.visualDifference === "no") {
+    } else if (assessment.visualDifference === "no") {
       patternLevel = "medium";
       riskPointsList.push("组合图案元素差异已达到50%以上，但视觉印象仍接近，按规则属于中风险。");
       suggestionList.push("进一步重做相同元素的轮廓、比例、姿态或表现方式，拉开视觉印象。");
     } else {
-      patternLevel = "low";
       riskPointsList.push("组合图案元素差异达到50%以上，且视觉印象不同，按规则属于低风险。");
     }
   }
 
-  if (inputs.notes.includes("参考") || inputs.notes.includes("借鉴")) {
-    suggestionList.push("既然存在参考关系，建议保留草图和修改过程，便于后续人工复核。");
+  if (assessment.summary) {
+    riskPointsList.push(`自动识别摘要：${assessment.summary}`);
+  }
+
+  if (assessment.evidence?.length) {
+    assessment.evidence.forEach((item) => riskPointsList.push(`识别依据：${item}`));
   }
 
   if (suggestionList.length === 0) {
@@ -413,48 +431,23 @@ function evaluateRisk(metrics, inputs) {
 
   const level = highestLevel(overallLevel, patternLevel);
   const score = scoreFromLevel(level, metrics.overallSimilarity);
-
-  return buildResult({
-    score,
-    level,
-    riskPointsList,
-    suggestionList,
-    differentCount,
-    colorDifferent,
-    compositionDifferent,
-    styleDifferent,
-  });
+  return buildResult(score, level, differentCount, colorDifferent, compositionDifferent, styleDifferent, riskPointsList, suggestionList);
 }
 
-function buildResult({
-  score,
-  level,
-  riskPointsList,
-  suggestionList,
-  differentCount,
-  colorDifferent,
-  compositionDifferent,
-  styleDifferent,
-}) {
-  const label =
-    level === "high" ? "高风险" :
-    level === "medium" ? "中风险" :
-    "低风险";
-
+function buildResult(score, level, differentCount, colorDifferent, compositionDifferent, styleDifferent, riskPointsList, suggestionList) {
+  const label = level === "high" ? "高风险" : level === "medium" ? "中风险" : "低风险";
   const reviewAdviceText =
     level === "high"
       ? "建议立即转人工复核并重做"
       : level === "medium"
         ? "建议设计主管复核后再修改"
         : "可进入人工抽检流程";
-
   const usageAdviceText =
     level === "high"
       ? "不建议直接使用"
       : level === "medium"
         ? "修改后再评估是否可用"
         : "保留过程文件后可谨慎使用";
-
   const differenceSummary =
     `配色${colorDifferent ? "不同" : "接近"}、` +
     `构图${compositionDifferent ? "不同" : "接近"}、` +
@@ -473,10 +466,6 @@ function buildResult({
   };
 }
 
-function uniqueList(items) {
-  return [...new Set(items)];
-}
-
 function highestLevel(first, second) {
   const rank = { low: 1, medium: 2, high: 3 };
   return rank[first] >= rank[second] ? first : second;
@@ -493,7 +482,32 @@ function scoreFromLevel(level, overallSimilarity) {
   return Math.min(38, baseline);
 }
 
-function renderResult(metrics, evaluation) {
+function uniqueList(items) {
+  return [...new Set(items)];
+}
+
+function renderAutoAssessment(assessment) {
+  patternTypeValue.textContent = translatePatternType(assessment.patternType);
+  brandRiskValue.textContent =
+    assessment.brandRisk === "yes"
+      ? `高风险${assessment.brandOrIpNames.length ? `：${assessment.brandOrIpNames.join("、")}` : ""}`
+      : "未识别到明显品牌/IP";
+  elementDifferenceValue.textContent = translateElementDifference(assessment.elementDifferenceLevel);
+  visualDifferenceValue.textContent = assessment.visualDifference === "yes" ? "视觉印象不同" : "视觉印象接近";
+  mainElementDifferentValue.textContent = assessment.mainElementDifferent === "yes" ? "主要元素不同" : "主要元素未明显变化";
+  aiOutlineRiskValue.textContent = assessment.aiOutlineRisk === "yes" ? "疑似保留原轮廓" : "未识别到明显轮廓复用";
+}
+
+function resetAutoAssessment() {
+  patternTypeValue.textContent = "待识别";
+  brandRiskValue.textContent = "待识别";
+  elementDifferenceValue.textContent = "待识别";
+  visualDifferenceValue.textContent = "待识别";
+  mainElementDifferentValue.textContent = "待识别";
+  aiOutlineRiskValue.textContent = "待识别";
+}
+
+function renderResult(metrics, evaluation, assessment) {
   riskBanner.dataset.level = evaluation.level;
   riskBanner.querySelector(".risk-label").textContent = evaluation.label;
   riskScore.textContent = `${evaluation.score}分`;
@@ -510,8 +524,8 @@ function renderResult(metrics, evaluation) {
 
   analysisSummary.textContent =
     `${evaluation.differenceSummary}` +
-    ` 当前系统将颜色直方图近似为配色接近度，将结构与画幅比例近似为构图接近度，将边缘组织近似为画法接近度。` +
-    ` 整体视觉接近度为 ${formatPercent(metrics.overallSimilarity)}。`;
+    ` 自动识别摘要：${assessment.summary || "无"}。` +
+    ` 当前后端模型：${assessment.model}。`;
 }
 
 function renderFallback(risks, suggestionItems, level, score) {
@@ -526,8 +540,11 @@ function renderFallback(risks, suggestionItems, level, score) {
   usageAdvice.textContent = "待分析";
   riskPoints.innerHTML = risks.map((item) => `<li>${item}</li>`).join("");
   suggestions.innerHTML = suggestionItems.map((item) => `<li>${item}</li>`).join("");
-  analysisSummary.textContent =
-    "系统会根据配色、构图、画法三项整体视觉印象，以及单一/组合图案元素规则进行判定。";
+}
+
+function setBackendStatus(text, type) {
+  backendStatus.textContent = text;
+  backendStatus.className = `status-card${type ? ` ${type}` : ""}`;
 }
 
 function formatPercent(value) {
@@ -538,8 +555,8 @@ function exportReport(result) {
   const content = [
     "图像侵权风险分析报告",
     `分析时间：${result.analyzedAt}`,
-    `设计图：${result.inputs.designFile}`,
-    `对比图：${result.inputs.referenceFile}`,
+    `设计图：${result.designFile}`,
+    `对比图：${result.referenceFile}`,
     "",
     "一、风险结论",
     `风险等级：${result.evaluation.label}`,
@@ -554,14 +571,17 @@ function exportReport(result) {
     `整体视觉接近度：${formatPercent(result.metrics.overallSimilarity)}`,
     `规则摘要：${result.evaluation.differenceSummary}`,
     "",
-    "三、人工补充项",
-    `图案类型：${translatePatternType(result.inputs.patternType)}`,
-    `是否含知名品牌/IP元素：${result.inputs.brandRisk === "yes" ? "是" : "否"}`,
-    `AI是否保留原轮廓：${result.inputs.aiOutlineRisk === "yes" ? "是" : "否"}`,
-    `元素差异比例：${translateElementDifference(result.inputs.elementDifferenceLevel)}`,
-    `相同元素视觉印象是否不同：${result.inputs.visualDifference === "yes" ? "是" : "否"}`,
-    `主要图案元素是否不同：${result.inputs.mainElementDifferent === "yes" ? "是" : "否"}`,
-    `补充说明：${result.inputs.notes || "无"}`,
+    "三、自动识别结果",
+    `后端模型：${result.assessment.model}`,
+    `图案类型：${translatePatternType(result.assessment.patternType)}`,
+    `品牌/IP风险：${result.assessment.brandRisk === "yes" ? "是" : "否"}`,
+    `识别到的品牌/IP：${result.assessment.brandOrIpNames.join("、") || "无"}`,
+    `AI是否保留原轮廓：${result.assessment.aiOutlineRisk === "yes" ? "是" : "否"}`,
+    `元素差异比例：${translateElementDifference(result.assessment.elementDifferenceLevel)}`,
+    `视觉印象差异：${result.assessment.visualDifference === "yes" ? "不同" : "接近"}`,
+    `主要元素差异：${result.assessment.mainElementDifferent === "yes" ? "不同" : "未明显不同"}`,
+    `识别摘要：${result.assessment.summary || "无"}`,
+    `补充说明：${result.notes || "无"}`,
     "",
     "四、风险关注点",
     ...result.evaluation.riskPoints.map((item, index) => `${index + 1}. ${item}`),
@@ -570,7 +590,7 @@ function exportReport(result) {
     ...result.evaluation.suggestions.map((item, index) => `${index + 1}. ${item}`),
     "",
     "六、说明",
-    "本结果基于配色、构图、画法及单一/组合图案元素规则进行初筛，不构成正式法律意见。",
+    "本结果基于图像特征和后端自动识别进行初筛，不构成正式法律意见。",
   ].join("\n");
 
   const blob = new Blob([content], { type: "text/plain;charset=utf-8" });

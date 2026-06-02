@@ -1,0 +1,9 @@
+{
+  "name": "image-ip-risk-tool",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Image IP risk review tool with Vercel API and OpenAI vision analysis.",
+  "dependencies": {
+    "openai": "^4.103.0"
+  }
+}

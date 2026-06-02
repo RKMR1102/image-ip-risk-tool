@@ -1,73 +1,90 @@
-# 图片侵权比对分析工具
+# 图像侵权风险研判台
 
-这是一个可直接部署的静态网页工具，适合放到 `Vercel`、`Netlify`、`GitHub Pages` 或公司内网静态服务器。
+这是一个可部署到 `Vercel` 的前后端一体化骨架：
 
-## 功能
+- 前端：上传两张图片、展示自动识别结果、运行风险规则
+- 后端：`/api/analyze`
+- 模型：通过 OpenAI 视觉能力识别品牌/IP、图案类型、元素差异和 AI 轮廓风险
 
-- 上传设计图和对比图
-- 计算结构相似度、边缘相似度、颜色相似度
-- 结合人工输入项进行规则评分
-- 输出低风险 / 中风险 / 高风险
-- 给出高风险点与修改建议
-
-## 文件结构
+## 目录
 
 - `index.html`：页面结构
-- `styles.css`：样式
-- `app.js`：前端分析逻辑
-- `vercel.json`：Vercel 部署配置
-- `netlify.toml`：Netlify 部署配置
+- `styles.css`：页面样式
+- `app.js`：前端逻辑与规则引擎
+- `api/analyze.js`：后端识别接口
+- `package.json`：后端依赖
+- `vercel.json`：Vercel 配置
 
-## 本地打开
+## 自动识别能力
 
-直接双击 `index.html` 即可使用。
+后端接口会返回这些字段：
 
-如果你想本地跑一个简单站点，可以在当前目录执行：
+- `patternType`：`single` / `composite`
+- `brandRisk`：`yes` / `no`
+- `brandOrIpNames`：命中的品牌或 IP 名称
+- `elementDifferenceLevel`：`ge50` / `lt50`
+- `visualDifference`：`yes` / `no`
+- `mainElementDifferent`：`yes` / `no`
+- `aiOutlineRisk`：`yes` / `no`
+- `summary`：中文摘要
+- `evidence`：识别依据
 
-```powershell
-python -m http.server 8080
-```
+## 本地说明
 
-然后访问：
+直接双击 `index.html` 只能看静态页面，不能调用后端接口。
 
-`http://localhost:8080`
+要完整运行，需要把它部署到 Vercel，或自己用 Node 跑一个后端服务。
 
 ## 部署到 Vercel
 
-1. 把整个 `image-ip-risk-tool` 文件夹上传到一个 Git 仓库
-2. 登录 [Vercel](https://vercel.com/)
-3. 导入该仓库
-4. 框架选择 `Other`
-5. 构建命令留空
-6. 输出目录留空或填 `.`
-7. 部署完成后即可得到公网网址
+1. 把整个 `image-ip-risk-tool` 目录上传到 GitHub 仓库
+2. 在 [Vercel](https://vercel.com/) 导入该仓库
+3. 确认根目录就是当前目录
+4. 在 Vercel 项目里打开 `Settings -> Environment Variables`
+5. 添加：
 
-## 部署到 Netlify
+```text
+OPENAI_API_KEY=你的 OpenAI API Key
+```
 
-1. 把整个 `image-ip-risk-tool` 文件夹上传到一个 Git 仓库
-2. 登录 [Netlify](https://www.netlify.com/)
-3. 新建站点并连接仓库
-4. Build command 留空
-5. Publish directory 填 `.`
-6. 部署完成后即可得到公网网址
+可选：
 
-## 部署到 GitHub Pages
+```text
+OPENAI_VISION_MODEL=gpt-4.1-mini
+```
 
-1. 新建 GitHub 仓库
-2. 上传当前目录全部文件
-3. 在仓库 `Settings -> Pages`
-4. Source 选择 `Deploy from a branch`
-5. Branch 选择 `main`，目录选 `/root`
-6. 保存后等待生成网址
+6. 保存后重新部署
 
-## 注意事项
+## 重新部署后如何生效
 
-- 当前逻辑是浏览器端规则引擎，不依赖后端
-- 图片不会上传到服务器，适合内部敏感素材做本地分析
-- 如果后续要做更强的侵权识别，建议增加：
-  - 审核记录保存
-  - 设计师账号体系
+- GitHub 提交新文件后，Vercel 会自动重新部署
+- 或者在 Vercel 的 `Deployments` 页面手动点 `Redeploy`
+
+## 当前规则
+
+- 品牌/IP元素：高风险
+- AI保留原轮廓：高风险
+- 整体视觉印象
+  - 0项不同：高风险
+  - 1项不同：高风险
+  - 2项不同：中风险
+  - 3项不同：低风险
+- 单一图案
+  - 主体没变且视觉接近：高风险
+  - 主体没变但视觉不同：中风险
+  - 主体变了且视觉不同：低风险
+- 组合图案
+  - 差异 < 50%：高风险
+  - 差异 >= 50% 但视觉接近：中风险
+  - 差异 >= 50% 且视觉不同：低风险
+
+## 注意
+
+- 当前后端是“自动初筛骨架”，不是最终法律判断系统
+- 品牌/IP识别结果建议保留人工复核环节
+- 如果后续要做正式系统，建议增加：
+  - 审核日志
+  - 用户权限
   - 历史案例库
-  - 白名单图库校验
-  - 后端图像特征检索
-  - 法务复核工作流
+  - 白名单图库
+  - 结果存档

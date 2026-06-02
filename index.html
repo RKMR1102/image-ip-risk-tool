@@ -13,7 +13,7 @@
         <p class="eyebrow">Image IP Risk Review Console</p>
         <h1>图像侵权风险研判台</h1>
         <p class="hero-copy">
-          上传设计图和对比图后，按配色、构图、画法和元素规则输出风险等级与修改建议。
+          上传设计图和对比图后，系统自动识别品牌/IP、图案类型和关键差异项，再结合配色、构图、画法规则输出风险等级。
         </p>
       </div>
     </header>
@@ -21,8 +21,8 @@
     <main class="layout">
       <section class="panel upload-panel">
         <div class="panel-header">
-          <h2>上传与研判</h2>
-          <p>支持 PNG、JPG、WEBP。图片仅在本地浏览器内分析。</p>
+          <h2>上传与自动识别</h2>
+          <p>支持 PNG、JPG、WEBP。部署后需在 Vercel 配置 <code>OPENAI_API_KEY</code> 才能启用自动识别。</p>
         </div>
 
         <div class="upload-grid">
@@ -41,64 +41,50 @@
           </label>
         </div>
 
-        <div class="meta-grid">
-          <label>
-            图案类型
-            <select id="patternType">
-              <option value="single">单一图案</option>
-              <option value="composite">组合图案</option>
-            </select>
-          </label>
-          <label>
-            是否含知名品牌 / IP元素
-            <select id="brandRisk">
-              <option value="no">否</option>
-              <option value="yes">是</option>
-            </select>
-          </label>
-          <label>
-            元素差异比例
-            <select id="elementDifferenceLevel">
-              <option value="ge50">50%及以上不同</option>
-              <option value="lt50">低于50%不同</option>
-            </select>
-          </label>
-          <label>
-            相同元素视觉印象是否不同
-            <select id="visualDifference">
-              <option value="yes">是</option>
-              <option value="no">否</option>
-            </select>
-          </label>
-          <label>
-            主要图案元素是否不同
-            <select id="mainElementDifferent">
-              <option value="yes">是</option>
-              <option value="no">否</option>
-            </select>
-          </label>
-          <label>
-            AI是否保留原轮廓
-            <select id="aiOutlineRisk">
-              <option value="no">否</option>
-              <option value="yes">是</option>
-            </select>
-          </label>
+        <div class="status-card" id="backendStatus">
+          后端状态：等待分析
+        </div>
+
+        <div class="auto-grid">
+          <article class="auto-card">
+            <span>图案类型</span>
+            <strong id="patternTypeValue">待识别</strong>
+          </article>
+          <article class="auto-card">
+            <span>品牌 / IP风险</span>
+            <strong id="brandRiskValue">待识别</strong>
+          </article>
+          <article class="auto-card">
+            <span>元素差异比例</span>
+            <strong id="elementDifferenceValue">待识别</strong>
+          </article>
+          <article class="auto-card">
+            <span>视觉印象差异</span>
+            <strong id="visualDifferenceValue">待识别</strong>
+          </article>
+          <article class="auto-card">
+            <span>主要元素差异</span>
+            <strong id="mainElementDifferentValue">待识别</strong>
+          </article>
+          <article class="auto-card">
+            <span>AI保留原轮廓</span>
+            <strong id="aiOutlineRiskValue">待识别</strong>
+          </article>
         </div>
 
         <label class="notes-field">
           设计补充说明
-          <textarea id="notesInput" rows="4" placeholder="补充差异点，如：配色重做、构图调整、主体替换、细节重绘。"></textarea>
+          <textarea id="notesInput" rows="4" placeholder="可选。补充差异点，如：配色重做、构图调整、主体替换、细节重绘。"></textarea>
         </label>
 
         <div class="action-row">
-          <button id="analyzeButton" class="primary-button" type="button">开始分析</button>
+          <button id="analyzeButton" class="primary-button" type="button">开始自动分析</button>
           <button id="exportButton" class="secondary-button" type="button">导出分析报告</button>
         </div>
 
         <div class="note-card">
-          <h3>当前判断依据</h3>
-          <p>按配色、构图、画法差异和单一/组合图案规则判断；品牌/IP元素或AI保留原轮廓直接判高风险。</p>
+          <h3>当前规则</h3>
+          <p>品牌/IP元素或AI保留原轮廓直接判高风险。其余情况按整体视觉印象和单一/组合图案规则分级。</p>
         </div>
       </section>
 
@@ -153,7 +139,7 @@
           <div>
             <h3>修改建议</h3>
             <ul id="suggestions" class="text-list">
-              <li>建议优先调整主体轮廓、构图关系和标志性细节。</li>
+              <li>系统会根据自动识别结果和规则引擎输出修改方向。</li>
             </ul>
           </div>
         </div>
@@ -161,7 +147,7 @@
         <div>
           <h3>分析说明</h3>
           <p id="analysisSummary" class="summary-copy">
-            系统结合图像特征和人工勾选规则输出初筛结果。
+            系统结合图像特征与后端自动识别结果输出初筛结论。
           </p>
         </div>
       </section>
