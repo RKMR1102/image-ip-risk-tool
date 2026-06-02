@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>图像侵权风险研判台</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="page-shell">
+    <header class="hero">
+      <div class="hero-copy-block">
+        <p class="eyebrow">Image IP Risk Review Console</p>
+        <h1>图像侵权风险研判台</h1>
+        <p class="hero-copy">
+          面向设计团队的中文审图工具。上传设计图与对比图后，系统会基于构图、轮廓、颜色与人工勾选规则，
+          生成侵权风险等级、重点问题和修改方向，适合在团队内部做设计初筛。
+        </p>
+        <div class="hero-tags">
+          <span>中文界面</span>
+          <span>浏览器本地分析</span>
+          <span>支持公开网址部署</span>
+        </div>
+      </div>
+      <div class="hero-card hero-grid">
+        <div>
+          <p class="hero-card-label">核心能力</p>
+          <ul>
+            <li>图像结构相似度识别</li>
+            <li>边缘与轮廓接近度判断</li>
+            <li>风格与元素重合补充判定</li>
+            <li>自动输出整改建议</li>
+          </ul>
+        </div>
+        <div class="hero-stat">
+          <strong>3层</strong>
+          <span>风险研判逻辑</span>
+        </div>
+        <div class="hero-stat">
+          <strong>100分</strong>
+          <span>风险量化评分</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel upload-panel">
+        <div class="panel-header">
+          <h2>上传与研判</h2>
+          <p>支持 PNG、JPG、WEBP。图片不会上传服务器，所有比对都在浏览器本地完成。</p>
+        </div>
+
+        <div class="upload-grid">
+          <label class="dropzone">
+            <span class="dropzone-title">设计图</span>
+            <input id="designInput" type="file" accept="image/*" />
+            <img id="designPreview" alt="设计图预览" hidden />
+            <span id="designHint" class="dropzone-hint">点击选择或拖入图片</span>
+          </label>
+
+          <label class="dropzone">
+            <span class="dropzone-title">对比图</span>
+            <input id="referenceInput" type="file" accept="image/*" />
+            <img id="referencePreview" alt="对比图预览" hidden />
+            <span id="referenceHint" class="dropzone-hint">点击选择或拖入图片</span>
+          </label>
+        </div>
+
+        <div class="meta-grid">
+          <label>
+            核心元素重合度
+            <select id="elementOverlap">
+              <option value="low">低</option>
+              <option value="medium">中</option>
+              <option value="high">高</option>
+            </select>
+          </label>
+          <label>
+            表现风格重合度
+            <select id="styleOverlap">
+              <option value="low">低</option>
+              <option value="medium">中</option>
+              <option value="high">高</option>
+            </select>
+          </label>
+          <label>
+            是否直接临摹/描摹
+            <select id="tracingRisk">
+              <option value="no">否</option>
+              <option value="suspected">疑似</option>
+              <option value="yes">是</option>
+            </select>
+          </label>
+          <label>
+            用途场景
+            <select id="commercialUsage">
+              <option value="internal">内部测试/学习</option>
+              <option value="campaign">商业推广</option>
+              <option value="product">商品销售</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="notes-field">
+          设计补充说明
+          <textarea id="notesInput" rows="4" placeholder="例如：主体为卡通兔子，参考图仅借鉴水彩质感，构图已重新组织，关键细节均为重绘。"></textarea>
+        </label>
+
+        <div class="action-row">
+          <button id="analyzeButton" class="primary-button" type="button">开始分析</button>
+          <button id="exportButton" class="secondary-button" type="button">导出分析报告</button>
+        </div>
+
+        <div class="note-card">
+          <h3>适用场景</h3>
+          <p>适合商品图案、插画、包装视觉、营销海报等场景的前置审核。若系统判定为中高风险，建议进入人工复核和法务复审。</p>
+        </div>
+      </section>
+
+      <section class="panel result-panel">
+        <div class="panel-header">
+          <h2>研判结果</h2>
+          <p>当前为规则引擎版本，适合做设计初筛，不替代法务终审。</p>
+        </div>
+
+        <div class="risk-banner" id="riskBanner" data-level="pending">
+          <span class="risk-label">等待分析</span>
+          <strong id="riskScore">0</strong>
+        </div>
+
+        <div class="metric-grid" id="metricGrid">
+          <article class="metric-card">
+            <span>结构相似度</span>
+            <strong id="shapeMetric">-</strong>
+          </article>
+          <article class="metric-card">
+            <span>颜色相似度</span>
+            <strong id="colorMetric">-</strong>
+          </article>
+          <article class="metric-card">
+            <span>边缘相似度</span>
+            <strong id="edgeMetric">-</strong>
+          </article>
+          <article class="metric-card">
+            <span>综合接近度</span>
+            <strong id="overallMetric">-</strong>
+          </article>
+        </div>
+
+        <div class="insight-strip">
+          <div class="insight-chip">
+            <span>审核建议</span>
+            <strong id="reviewAdvice">待分析</strong>
+          </div>
+          <div class="insight-chip">
+            <span>使用建议</span>
+            <strong id="usageAdvice">待分析</strong>
+          </div>
+        </div>
+
+        <div class="result-columns">
+          <div>
+            <h3>风险关注点</h3>
+            <ul id="riskPoints" class="text-list">
+              <li>上传两张图片后开始分析。</li>
+            </ul>
+          </div>
+          <div>
+            <h3>修改建议</h3>
+            <ul id="suggestions" class="text-list">
+              <li>建议优先调整主体轮廓、构图关系和标志性细节。</li>
+            </ul>
+          </div>
+        </div>
+
+        <div>
+          <h3>分析说明</h3>
+          <p id="analysisSummary" class="summary-copy">
+            工具会缩放两张图片并提取灰度、边缘与颜色特征，再叠加人工输入的元素/风格重合度做规则评分。
+          </p>
+        </div>
+
+        <div class="method-grid">
+          <article class="method-card">
+            <h3>判定逻辑</h3>
+            <p>自动研判由图像接近度、人工风险勾选和商业场景权重三部分共同组成。</p>
+          </article>
+          <article class="method-card">
+            <h3>高风险触发示例</h3>
+            <p>主体轮廓高度相似、关键边缘组织接近、明确存在描摹、并将用于商品销售。</p>
+          </article>
+          <article class="method-card">
+            <h3>上线建议</h3>
+            <p>正式投入团队使用前，建议叠加案例库、审批流和可追溯的审核记录。</p>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <section class="footer-panel">
+      <div>
+        <p class="footer-eyebrow">Deployment Ready</p>
+        <h2>可作为中文内部网址工具直接上线</h2>
+        <p>当前版本是纯静态网页，不依赖后端服务，适合部署到 Vercel、Netlify 或 GitHub Pages。若后续要接企业系统，我也可以继续帮你改成带账号、案例库和审批流的正式版本。</p>
+      </div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
