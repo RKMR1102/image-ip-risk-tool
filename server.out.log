@@ -1,0 +1,12 @@
+
+图像侵权风险系统已启动
+本地访问: http://localhost:3100
+局域网访问: http://192.168.44.240:3100
+图库根目录: C:\Users\patpat\Documents\image-ip-risk-library
+图库数据文件: C:\Users\patpat\Documents\image-ip-risk-library\data\risk-library.json
+
+页面入口：
+- 首页: http://localhost:3100/index.html
+- 管理端: http://localhost:3100/admin.html
+- 分析端: http://localhost:3100/check.html
+

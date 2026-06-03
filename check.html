@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>设计图比对分析</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="site-shell">
+    <header class="hero hero-compact">
+      <p class="eyebrow">Check Console</p>
+      <div class="top-nav">
+        <div>
+          <h1>设计图比对分析</h1>
+          <p class="hero-copy">上传设计图和指定对比图，系统按同一套规则输出风险等级、风险点和修改建议。</p>
+        </div>
+      </div>
+    </header>
+
+    <main class="main-grid">
+      <section class="panel">
+        <div class="panel-header">
+          <h2>上传图片</h2>
+          <p>设计图和指定对比图均为必传。</p>
+        </div>
+
+        <div class="upload-grid">
+          <label class="dropzone">
+            <span class="dropzone-title">设计图</span>
+            <input id="designInput" type="file" accept="image/*" />
+            <img id="designPreview" alt="设计图预览" hidden />
+            <span id="designHint" class="dropzone-hint">点击选择或拖入图片</span>
+          </label>
+
+          <label class="dropzone">
+            <span class="dropzone-title">指定对比图</span>
+            <input id="referenceInput" type="file" accept="image/*" />
+            <img id="referencePreview" alt="指定对比图预览" hidden />
+            <span id="referenceHint" class="dropzone-hint">请上传需要比对的参考图</span>
+          </label>
+        </div>
+
+        <label class="notes-field">
+          补充说明
+          <textarea id="notesInput" rows="4" placeholder="可选。填写角色名、疑似来源、重点核查元素或使用场景。"></textarea>
+        </label>
+
+        <div class="action-row">
+          <button id="analyzeButton" class="primary-button" type="button">开始自动比对</button>
+          <button id="exportButton" class="secondary-button" type="button">导出分析报告</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>比对结果</h2>
+          <p>仅根据设计图与指定对比图的相似度和规则输出结论。</p>
+        </div>
+
+        <div class="risk-banner" id="riskBanner" data-level="pending">
+          <span class="risk-label">等待分析</span>
+          <strong id="riskScore">0分</strong>
+        </div>
+
+        <div class="metric-grid">
+          <article class="metric-card">
+            <span>主体接近度</span>
+            <strong id="shapeMetric">-</strong>
+          </article>
+          <article class="metric-card">
+            <span>构图接近度</span>
+            <strong id="compositionMetric">-</strong>
+          </article>
+          <article class="metric-card">
+            <span>视觉接近度</span>
+            <strong id="visualMetric">-</strong>
+          </article>
+          <article class="metric-card">
+            <span>整体接近度</span>
+            <strong id="overallMetric">-</strong>
+          </article>
+        </div>
+
+        <div class="insight-strip">
+          <div class="insight-chip">
+            <span>审核建议</span>
+            <strong id="reviewAdvice">待分析</strong>
+          </div>
+          <div class="insight-chip">
+            <span>使用建议</span>
+            <strong id="usageAdvice">待分析</strong>
+          </div>
+        </div>
+
+        <div class="compare-panel">
+          <div class="compare-card">
+            <h3>设计图</h3>
+            <img id="compareDesignPreview" alt="设计图对照预览" />
+          </div>
+          <div class="compare-card">
+            <h3>指定对比图</h3>
+            <img id="compareMatchPreview" alt="指定对比图对照预览" />
+            <p id="compareMatchLabel" class="compare-label">等待分析</p>
+          </div>
+        </div>
+
+        <div class="result-box">
+          <h3>规则判定依据</h3>
+          <ul id="ruleReasons" class="text-list">
+            <li>上传设计图和指定对比图后开始分析。</li>
+          </ul>
+        </div>
+
+        <div class="result-columns">
+          <div class="result-box">
+            <h3>风险关注点</h3>
+            <ul id="riskPoints" class="text-list">
+              <li>等待分析结果。</li>
+            </ul>
+          </div>
+          <div class="result-box">
+            <h3>修改建议</h3>
+            <ul id="suggestions" class="text-list">
+              <li>等待分析结果。</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>指定对比图结果</h2>
+        <p id="analysisSummary" class="summary-copy">系统将展示本次“设计图 vs 指定对比图”的最终结论。</p>
+      </div>
+
+      <div class="result-box">
+        <h3>相似度摘要</h3>
+        <p id="referenceSummary" class="summary-copy">尚未上传指定对比图。</p>
+      </div>
+    </section>
+  </div>
+
+  <script src="shared-core.js"></script>
+  <script src="check.js"></script>
+</body>
+</html>

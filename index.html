@@ -3,248 +3,36 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>图像侵权风险自动比对工具</title>
+  <title>图像侵权风险比对工具</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div class="page-shell">
-    <header class="hero">
-      <p class="eyebrow">Internal Review Tool</p>
-      <h1>图像侵权风险自动比对工具</h1>
+  <div class="site-shell landing-shell">
+    <header class="hero hero-compact">
+      <p class="eyebrow">Image IP Risk Tool</p>
+      <h1>图像侵权风险比对工具</h1>
       <p class="hero-copy">
-        上传设计图后，系统会在浏览器本地将其与高风险图库逐张自动比对，输出 Top 命中结果、风险等级、命中原因和修改建议。
+        这是独立的线上简化版，仅做“设计图 vs 指定对比图”分析，不包含高风险图库和管理端。
       </p>
     </header>
 
-    <main class="main-grid">
-      <section class="panel">
-        <div class="panel-header">
-          <h2>待检图片</h2>
-          <p>支持上传设计图，以及一张可选的指定对比图。最终风险等级优先依据图库自动命中结果判断。</p>
-        </div>
-
-        <div class="upload-grid">
-          <label class="dropzone">
-            <span class="dropzone-title">设计图</span>
-            <input id="designInput" type="file" accept="image/*" />
-            <img id="designPreview" alt="设计图预览" hidden />
-            <span id="designHint" class="dropzone-hint">点击选择或拖入图片</span>
-          </label>
-
-          <label class="dropzone">
-            <span class="dropzone-title">指定对比图（可选）</span>
-            <input id="referenceInput" type="file" accept="image/*" />
-            <img id="referencePreview" alt="指定对比图预览" hidden />
-            <span id="referenceHint" class="dropzone-hint">可选，用于补充人工对照</span>
-          </label>
-        </div>
-
-        <label class="notes-field">
-          设计补充说明
-          <textarea
-            id="notesInput"
-            rows="4"
-            placeholder="可选。填写角色名、疑似来源、重点核查元素或设计场景。"
-          ></textarea>
-        </label>
-
-        <div class="action-row">
-          <button id="analyzeButton" class="primary-button" type="button">开始自动比对</button>
-          <button id="exportButton" class="secondary-button" type="button">导出分析报告</button>
-        </div>
-
-        <div class="hint-card">
-          <h3>当前版本说明</h3>
-          <p>这是纯前端、本地运行的自动比对版本，不依赖 API，不消耗 token，适合做内部初筛和设计自查。</p>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-header">
-          <h2>比对结果</h2>
-          <p>系统会给出指定对比图结果，以及图库中最接近的高风险命中对象。</p>
-        </div>
-
-        <div class="threshold-panel">
-          <h3>自动阈值</h3>
-          <div class="threshold-grid">
-            <label>
-              高风险线
-              <input id="highThresholdInput" type="range" min="70" max="98" step="1" value="86" />
-              <span id="highThresholdValue">86%</span>
-            </label>
-            <label>
-              中风险线
-              <input id="mediumThresholdInput" type="range" min="55" max="90" step="1" value="72" />
-              <span id="mediumThresholdValue">72%</span>
-            </label>
-          </div>
-          <p class="threshold-tip">阈值保存在当前浏览器中。中风险线必须低于高风险线。</p>
-        </div>
-
-        <div class="risk-banner" id="riskBanner" data-level="pending">
-          <span class="risk-label">等待分析</span>
-          <strong id="riskScore">0分</strong>
-        </div>
-
-        <div class="metric-grid">
-          <article class="metric-card">
-            <span>主体接近度</span>
-            <strong id="shapeMetric">-</strong>
-          </article>
-          <article class="metric-card">
-            <span>构图接近度</span>
-            <strong id="colorMetric">-</strong>
-          </article>
-          <article class="metric-card">
-            <span>视觉接近度</span>
-            <strong id="edgeMetric">-</strong>
-          </article>
-          <article class="metric-card">
-            <span>整体接近度</span>
-            <strong id="overallMetric">-</strong>
-          </article>
-        </div>
-
-        <div class="insight-strip">
-          <div class="insight-chip">
-            <span>审核建议</span>
-            <strong id="reviewAdvice">待分析</strong>
-          </div>
-          <div class="insight-chip">
-            <span>使用建议</span>
-            <strong id="usageAdvice">待分析</strong>
-          </div>
-        </div>
-
-        <div class="compare-panel">
-          <div class="compare-card">
-            <h3>设计图</h3>
-            <img id="compareDesignPreview" alt="设计图对照预览" />
-          </div>
-          <div class="compare-card">
-            <h3>最高命中图</h3>
-            <img id="compareMatchPreview" alt="命中图对照预览" />
-            <p id="compareMatchLabel" class="compare-label">等待分析</p>
-          </div>
-        </div>
-
-        <div class="result-box">
-          <h3>图库命中 Top 5</h3>
-          <div id="libraryMatches" class="match-gallery">
-            <div class="match-empty">先建立高风险图库，再开始自动比对。</div>
-          </div>
-        </div>
-
-        <div class="result-box">
-          <h3>指定对比图结果</h3>
-          <p id="referenceSummary" class="summary-copy">未上传指定对比图。</p>
-        </div>
-
-        <div class="result-box">
-          <h3>规则判定依据</h3>
-          <ul id="ruleReasons" class="text-list">
-            <li>上传设计图并完成一次自动比对后，系统会展示本次命中的主要判断依据。</li>
-          </ul>
-        </div>
-
-        <div class="result-columns">
-          <div>
-            <h3>风险关注点</h3>
-            <ul id="riskPoints" class="text-list">
-              <li>上传设计图并建立风险图库后开始分析。</li>
-            </ul>
-          </div>
-          <div>
-            <h3>修改建议</h3>
-            <ul id="suggestions" class="text-list">
-              <li>建议先扩充高风险图库，再根据命中结果调整主体、构图和关键识别细节。</li>
-            </ul>
-          </div>
-        </div>
-
-        <div>
-          <h3>分析说明</h3>
-          <p id="analysisSummary" class="summary-copy">
-            系统会从颜色分布、主体轮廓、构图结构、边缘组织和感知哈希多个维度提取特征，再与本地图库逐张计算相似度。
-          </p>
-        </div>
-      </section>
+    <main class="landing-grid">
+      <a class="entry-card" href="/check.html">
+        <span class="entry-tag">线上版本</span>
+        <h2>进入比对分析</h2>
+        <p>上传设计图和指定对比图，系统输出风险等级、规则依据、风险点和修改建议。</p>
+        <strong>开始使用</strong>
+      </a>
     </main>
 
-    <section class="panel library-panel">
-      <div class="panel-header">
-        <h2>高风险图库</h2>
-        <p>在这里维护品牌、IP、角色或其他高风险图案参考图。系统会将设计图与图库逐张自动比对。</p>
-      </div>
-
-      <div class="library-toolbar">
-        <label>
-          风险对象名称
-          <input id="libraryNameInput" type="text" placeholder="例如：Disney 米奇" />
-        </label>
-        <label>
-          分类
-          <input id="libraryCategoryInput" type="text" placeholder="例如：影视 IP / 品牌 / 卡通角色" />
-        </label>
-        <label>
-          备注
-          <input id="libraryNotesInput" type="text" placeholder="可选。补充识别点、审查说明或变体信息。" />
-        </label>
-        <label class="file-field">
-          参考图
-          <input id="libraryFilesInput" type="file" accept="image/*" multiple />
-        </label>
-        <label>
-          标签
-          <input id="libraryTagsInput" type="text" placeholder="例如：Disney, 米奇, 红裤子, 白手套" />
-        </label>
-      </div>
-
-      <div class="action-row">
-        <button id="addLibraryButton" class="primary-button" type="button">加入图库</button>
-        <label class="import-label">
-          <input id="batchLibraryInput" type="file" accept="image/*" webkitdirectory directory multiple hidden />
-          <span class="secondary-button import-button">批量导入文件夹</span>
-        </label>
-        <button id="exportLibraryButton" class="secondary-button" type="button">导出图库</button>
-        <label class="import-label">
-          <input id="importLibraryInput" type="file" accept="application/json" hidden />
-          <span class="secondary-button import-button">导入图库</span>
-        </label>
-        <button id="clearLibraryButton" class="danger-button" type="button">清空图库</button>
-      </div>
-
-      <div class="library-status" id="libraryStatus">当前图库为空。</div>
-      <div class="batch-tip">
-        批量导入建议：每个风险对象单独放一个文件夹，例如
-        <code>Disney/米奇/图1.png</code> 或 <code>Sanrio/Hello Kitty/图1.png</code>。
-        系统会优先按上级文件夹名称自动分组。
-      </div>
-
-      <div class="library-filters">
-        <label>
-          搜索
-          <input id="librarySearchInput" type="text" placeholder="按名称、分类、标签搜索" />
-        </label>
-        <label>
-          分类筛选
-          <select id="libraryCategoryFilter">
-            <option value="">全部分类</option>
-          </select>
-        </label>
-        <label>
-          标签筛选
-          <select id="libraryTagFilter">
-            <option value="">全部标签</option>
-          </select>
-        </label>
-      </div>
-
-      <div id="libraryGrid" class="library-grid"></div>
+    <section class="panel info-panel">
+      <h3>版本说明</h3>
+      <ul class="text-list">
+        <li>本版本不连接高风险图库，不提供图库管理功能。</li>
+        <li>分析仅基于设计图与指定对比图之间的相似度和规则判断。</li>
+        <li>适合部署到 Vercel 独立运行。</li>
+      </ul>
     </section>
   </div>
-
-  <script src="app.js"></script>
 </body>
 </html>
