@@ -65,7 +65,7 @@ referenceInput.addEventListener("change", async (event) => {
   referenceHint.textContent = file.name;
 });
 
-analyzeButton.addEventListener("click", async () => {
+analyzeButton.addEventListener("click", () => {
   if (!state.designProfile || !state.referenceProfile) {
     renderFallback(
       ["请同时上传设计图和指定对比图。"],
@@ -77,15 +77,9 @@ analyzeButton.addEventListener("click", async () => {
   analyzeButton.disabled = true;
   analyzeButton.textContent = "比对中...";
   try {
-    const result = await apiRequest("/api/analyze", {
-      method: "POST",
-      body: {
-        designProfile: state.designProfile,
-        referenceProfile: state.referenceProfile,
-        notes: notesInput.value.trim(),
-        designFileName: designHint.textContent,
-        referenceFileName: referenceHint.textContent,
-      },
+    const result = analyzeReferenceOnly({
+      designProfile: state.designProfile,
+      referenceProfile: state.referenceProfile,
     });
 
     state.lastResult = {
@@ -100,7 +94,7 @@ analyzeButton.addEventListener("click", async () => {
   } catch (error) {
     renderFallback(
       [`比对失败：${error.message}`],
-      ["请确认两张图片都已上传，且分析接口可正常访问。"]
+      ["请确认两张图片都能正常读取后再重试。"]
     );
   } finally {
     analyzeButton.disabled = false;
@@ -116,6 +110,219 @@ exportButton.addEventListener("click", () => {
 
   exportReport(state.lastResult);
 });
+
+function analyzeReferenceOnly({ designProfile, referenceProfile }) {
+  const similarity = compareProfiles(designProfile, referenceProfile);
+  const patternType = inferPairPatternType(designProfile, referenceProfile);
+  const differenceCount = computeDifferenceCount(similarity);
+  const subjectChanged = looksSubjectIdentityChanged(similarity);
+
+  let level = "low";
+  const reasons = [];
+
+  if (patternType === "single") {
+    if (!subjectChanged && similarity.subjectSimilarity >= 0.78 && similarity.visualSimilarity >= 0.68) {
+      level = "high";
+      reasons.push("判定为单一图案，主体未变且视觉仍较接近，按高风险处理。");
+    } else if (!subjectChanged && similarity.subjectSimilarity >= 0.62 && similarity.compositionSimilarity >= 0.6) {
+      level = "medium";
+      reasons.push("判定为单一图案，主体基本未变，但局部已有调整，按中风险处理。");
+    } else {
+      level = "low";
+      reasons.push("判定为单一图案，主体已变化或整体视觉差异较明显，按低风险处理。");
+    }
+  } else {
+    const differenceRatio = 1 - (similarity.subjectSimilarity * 0.55 + similarity.compositionSimilarity * 0.45);
+    if (differenceRatio < 0.28 && similarity.visualSimilarity >= 0.66) {
+      level = "high";
+      reasons.push(`判定为组合图案，结构差异约 ${Math.round(differenceRatio * 100)}%，且视觉较接近，按高风险处理。`);
+    } else if (differenceRatio < 0.42 && similarity.overallSimilarity >= 0.58) {
+      level = "medium";
+      reasons.push(`判定为组合图案，结构差异约 ${Math.round(differenceRatio * 100)}%，按中风险处理。`);
+    } else {
+      level = "low";
+      reasons.push(`判定为组合图案，结构差异约 ${Math.round(differenceRatio * 100)}%，按低风险处理。`);
+    }
+  }
+
+  if (differenceCount === 3) {
+    level = "low";
+    reasons.push("三项核心维度均明显不同，最终按低风险处理。");
+  } else if (differenceCount === 2 && level === "high") {
+    level = "medium";
+    reasons.push("三项核心维度中有 2 项明显不同，高风险下调为中风险。");
+  }
+
+  if (similarity.maskSimilarity >= 0.93 && similarity.edgeSimilarity >= 0.86) {
+    level = "high";
+    reasons.push("轮廓保留度很高，触发“AI 保留原轮廓 = 高风险”规则。");
+  }
+
+  reasons.push(
+    `整体接近度 ${formatPercent(similarity.overallSimilarity)}，主体 ${formatPercent(similarity.subjectSimilarity)}，构图 ${formatPercent(similarity.compositionSimilarity)}，视觉 ${formatPercent(similarity.visualSimilarity)}。`
+  );
+
+  const result = {
+    analyzedAt: new Date().toLocaleString("zh-CN", { hour12: false }),
+    referenceResult: similarity,
+    topMatches: [],
+    evaluation: {
+      level,
+      label: levelToLabel(level),
+      score: calculateRiskScore(similarity, level),
+      reviewAdviceText:
+        level === "high"
+          ? "建议立即人工复核并暂停使用"
+          : level === "medium"
+            ? "建议修改后再进行一轮比对"
+            : "可进入人工抽检流程",
+      usageAdviceText:
+        level === "high"
+          ? "不建议直接使用"
+          : level === "medium"
+            ? "修改完成后再评估是否可用"
+            : "建议保留记录后谨慎使用",
+      riskPoints: buildRiskPoints(similarity),
+      suggestions: buildSuggestions(level, patternType, subjectChanged),
+      reasons,
+      summary: `本次仅执行“设计图 vs 指定对比图”分析，最终给出${levelToLabel(level)}结论。`,
+    },
+  };
+
+  return result;
+}
+
+function compareProfiles(base, target) {
+  const colorSimilarity = overlapSimilarity(base.colorHistogram, target.colorHistogram);
+  const structureSimilarity = cosineSimilarity(base.gray, target.gray);
+  const blockSimilarity = cosineSimilarity(base.blockVector, target.blockVector);
+  const maskSimilarity = cosineSimilarity(base.maskVector, target.maskVector);
+  const edgeSimilarity = cosineSimilarity(base.edges, target.edges);
+  const averageHashSimilarity = hashSimilarity(base.averageHash, target.averageHash);
+  const differenceHashSimilarity = hashSimilarity(base.differenceHash, target.differenceHash);
+
+  const subjectSimilarity =
+    structureSimilarity * 0.25 +
+    blockSimilarity * 0.35 +
+    maskSimilarity * 0.4;
+
+  const compositionSimilarity =
+    structureSimilarity * 0.35 +
+    blockSimilarity * 0.4 +
+    maskSimilarity * 0.25;
+
+  const visualSimilarity =
+    edgeSimilarity * 0.42 +
+    colorSimilarity * 0.18 +
+    averageHashSimilarity * 0.2 +
+    differenceHashSimilarity * 0.2;
+
+  const overallSimilarity =
+    colorSimilarity * 0.18 +
+    subjectSimilarity * 0.32 +
+    compositionSimilarity * 0.27 +
+    visualSimilarity * 0.23;
+
+  return {
+    colorSimilarity,
+    structureSimilarity,
+    blockSimilarity,
+    maskSimilarity,
+    edgeSimilarity,
+    averageHashSimilarity,
+    differenceHashSimilarity,
+    subjectSimilarity,
+    compositionSimilarity,
+    visualSimilarity,
+    overallSimilarity,
+  };
+}
+
+function inferPairPatternType(designProfile, targetProfile) {
+  const designType = inferPatternType(designProfile);
+  const targetType = inferPatternType(targetProfile);
+  return designType === "composite" || targetType === "composite" ? "composite" : "single";
+}
+
+function inferPatternType(profile) {
+  if (!profile) {
+    return "composite";
+  }
+
+  const compactShape =
+    profile.componentCount <= 3 &&
+    profile.largestComponentRatio >= 0.48 &&
+    profile.coverageRatio <= 0.62;
+
+  return compactShape ? "single" : "composite";
+}
+
+function computeDifferenceCount(similarity) {
+  const subjectDifferent = similarity.subjectSimilarity < 0.84;
+  const compositionDifferent = similarity.compositionSimilarity < 0.74;
+  const visualDifferent = similarity.visualSimilarity < 0.74;
+  return [subjectDifferent, compositionDifferent, visualDifferent].filter(Boolean).length;
+}
+
+function looksSubjectIdentityChanged(similarity) {
+  return (
+    similarity.subjectSimilarity < 0.58 &&
+    (similarity.visualSimilarity < 0.62 || similarity.maskSimilarity < 0.72)
+  );
+}
+
+function buildRiskPoints(similarity) {
+  const items = [];
+  if (similarity.subjectSimilarity >= 0.75) {
+    items.push("主体轮廓和核心识别关系接近。");
+  }
+  if (similarity.compositionSimilarity >= 0.7) {
+    items.push("主体位置和画面重心接近。");
+  }
+  if (similarity.visualSimilarity >= 0.66) {
+    items.push("线条组织、配色气质或视觉表达仍较接近。");
+  }
+  if (!items.length) {
+    items.push("当前主要风险来自局部元素或结构相似，建议结合人工再复核。");
+  }
+  return items;
+}
+
+function buildSuggestions(level, patternType, subjectChanged) {
+  const items = [];
+  if (level === "high") {
+    items.push("建议优先重做主体轮廓、关键识别细节和整体视觉关系。");
+  } else if (level === "medium") {
+    items.push("建议在主体、构图或视觉表达上继续拉开差异后再复核。");
+  } else {
+    items.push("建议保留本次比对记录，并结合人工复核确认使用场景。");
+  }
+
+  if (patternType === "single") {
+    items.push(subjectChanged ? "单一图案可继续拉开五官、姿态和轮廓差异。" : "单一图案优先修改主体轮廓、五官结构和典型姿态。");
+  } else {
+    items.push("组合图案优先打散元素排列、数量关系和画面重心。");
+  }
+
+  return [...new Set(items)];
+}
+
+function calculateRiskScore(similarity, level) {
+  const base = Math.round(
+    similarity.overallSimilarity * 40 +
+    similarity.subjectSimilarity * 25 +
+    similarity.compositionSimilarity * 20 +
+    similarity.visualSimilarity * 15
+  );
+
+  if (level === "high") {
+    return Math.max(85, base);
+  }
+  if (level === "medium") {
+    return Math.min(84, Math.max(60, base));
+  }
+  return Math.min(base, 59);
+}
 
 function renderResult(result) {
   const evaluation = result.evaluation;
@@ -163,22 +370,6 @@ function renderFallback(risks, advice) {
   analysisSummary.textContent = "系统将展示本次“设计图 vs 指定对比图”的最终结论。";
 }
 
-async function apiRequest(url, options) {
-  const response = await fetch(url, {
-    method: options.method || "GET",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
-
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(data.error || "请求失败");
-  }
-  return data;
-}
-
 function exportReport(result) {
   const response = result.response;
   const similarity = response.referenceResult || {};
@@ -217,6 +408,57 @@ function exportReport(result) {
   link.download = `图像自动比对报告-${Date.now()}.txt`;
   link.click();
   URL.revokeObjectURL(link.href);
+}
+
+function overlapSimilarity(a, b) {
+  let overlap = 0;
+  let total = 0;
+  const length = Math.min(a.length, b.length);
+  for (let index = 0; index < length; index += 1) {
+    overlap += Math.min(a[index], b[index]);
+    total += Math.max(a[index], b[index]);
+  }
+  return total === 0 ? 0 : overlap / total;
+}
+
+function cosineSimilarity(a, b) {
+  let dot = 0;
+  let magnitudeA = 0;
+  let magnitudeB = 0;
+  const length = Math.min(a.length, b.length);
+  for (let index = 0; index < length; index += 1) {
+    dot += a[index] * b[index];
+    magnitudeA += a[index] * a[index];
+    magnitudeB += b[index] * b[index];
+  }
+  if (magnitudeA === 0 || magnitudeB === 0) {
+    return 0;
+  }
+  return dot / (Math.sqrt(magnitudeA) * Math.sqrt(magnitudeB));
+}
+
+function hashSimilarity(a, b) {
+  const length = Math.min(a.length, b.length);
+  if (!length) {
+    return 0;
+  }
+  let different = 0;
+  for (let index = 0; index < length; index += 1) {
+    if (a[index] !== b[index]) {
+      different += 1;
+    }
+  }
+  return 1 - different / length;
+}
+
+function levelToLabel(level) {
+  if (level === "high") {
+    return "高风险";
+  }
+  if (level === "medium") {
+    return "中风险";
+  }
+  return "低风险";
 }
 
 function formatPercent(value) {
