@@ -5,5 +5,8 @@
   "description": "图像侵权风险系统，本机/内网服务器 + D盘图库版本",
   "scripts": {
     "start": "node server.js"
+  },
+  "dependencies": {
+    "@vercel/blob": "latest"
   }
 }

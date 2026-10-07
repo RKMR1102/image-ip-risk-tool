@@ -75,43 +75,50 @@ searchReferenceButton.addEventListener("click", () => {
   submitToGoogleLens(referenceInput, "指定对比图");
 });
 
-function submitToGoogleLens(fileInput, label) {
+async function submitToGoogleLens(fileInput, label) {
   const file = fileInput.files?.[0];
   if (!file) {
     window.alert(`请先上传${label}。`);
     return;
   }
 
-  // Google Lens accepts a multipart image upload. The existing file input is
-  // temporarily placed in a form so the browser sends the selected file only
-  // after the user explicitly clicks the search button.
-  const form = document.createElement("form");
-  form.method = "post";
-  form.action = "https://lens.google.com/v3/upload?hl=zh-CN";
-  form.target = "_blank";
-  form.enctype = "multipart/form-data";
-  form.style.display = "none";
+  const button = fileInput === designInput ? searchDesignButton : searchReferenceButton;
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = "上传中...";
 
-  const imageContent = document.createElement("input");
-  imageContent.type = "hidden";
-  imageContent.name = "image_content";
-  imageContent.value = "";
+  try {
+    const dataUrl = await readFileAsDataUrl(file);
+    const response = await fetch("/api/upload-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dataUrl, fileName: file.name, contentType: file.type }),
+    });
+    const result = await response.json();
+    if (!response.ok || !result.url) {
+      throw new Error(result.error || "图片上传失败。");
+    }
 
-  const originalParent = fileInput.parentElement;
-  const originalNextSibling = fileInput.nextSibling;
-  const originalName = fileInput.name;
-  fileInput.name = "encoded_image";
-  form.append(fileInput, imageContent);
-  document.body.appendChild(form);
-  form.submit();
-
-  if (originalNextSibling) {
-    originalParent.insertBefore(fileInput, originalNextSibling);
-  } else {
-    originalParent.appendChild(fileInput);
+    window.open(
+      `https://lens.google.com/uploadbyurl?url=${encodeURIComponent(result.url)}`,
+      "_blank",
+      "noopener"
+    );
+  } catch (error) {
+    window.alert(`无法打开 Google 搜图：${error.message}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = originalLabel;
   }
-  fileInput.name = originalName;
-  form.remove();
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("无法读取图片文件。"));
+    reader.readAsDataURL(file);
+  });
 }
 
 analyzeButton.addEventListener("click", () => {
