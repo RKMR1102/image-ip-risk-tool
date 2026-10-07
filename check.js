@@ -169,7 +169,7 @@ async function compareLensResult(imageUrl) {
     compareMatchPreview.src = result.dataUrl;
     compareMatchPreview.hidden = false;
     renderResult(comparison);
-    document.getElementById("analysisSummary").scrollIntoView({ behavior: "smooth", block: "start" });
+    document.getElementById("riskBanner")?.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {
     window.alert(`无法直接读取该结果图片：${error.message}`);
   }
@@ -501,7 +501,7 @@ function renderResult(result) {
   riskBanner.dataset.level = evaluation.level;
   riskBanner.querySelector(".risk-label").textContent = evaluation.label;
   riskScore.textContent = `${evaluation.score}分`;
-  confidenceSummary.textContent = `自动判断置信度：${evaluation.confidence || 0}%（仅作初筛，仍需人工核验来源和授权）`;
+  if (confidenceSummary) confidenceSummary.textContent = `自动判断置信度：${evaluation.confidence || 0}%（仅作初筛，仍需人工核验来源和授权）`;
 
   shapeMetric.textContent = formatPercent(similarity?.subjectSimilarity);
   compositionMetric.textContent = formatPercent(similarity?.compositionSimilarity);
@@ -515,18 +515,20 @@ function renderResult(result) {
   riskPoints.innerHTML = evaluation.riskPoints.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   suggestions.innerHTML = evaluation.suggestions.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
 
-  referenceSummary.textContent = similarity
-    ? `指定对比图整体 ${formatPercent(similarity.overallSimilarity)}，主体 ${formatPercent(similarity.subjectSimilarity)}，构图 ${formatPercent(similarity.compositionSimilarity)}，视觉 ${formatPercent(similarity.visualSimilarity)}。`
-    : "尚未生成相似度摘要。";
+  if (referenceSummary) {
+    referenceSummary.textContent = similarity
+      ? `指定对比图整体 ${formatPercent(similarity.overallSimilarity)}，主体 ${formatPercent(similarity.subjectSimilarity)}，构图 ${formatPercent(similarity.compositionSimilarity)}，视觉 ${formatPercent(similarity.visualSimilarity)}。`
+      : "尚未生成相似度摘要。";
+  }
 
-  analysisSummary.textContent = result.evaluation.summary;
+  if (analysisSummary) analysisSummary.textContent = result.evaluation.summary;
 }
 
 function renderFallback(risks, advice) {
   riskBanner.dataset.level = "pending";
   riskBanner.querySelector(".risk-label").textContent = "等待分析";
   riskScore.textContent = "0分";
-  confidenceSummary.textContent = "自动判断置信度：等待分析";
+  if (confidenceSummary) confidenceSummary.textContent = "自动判断置信度：等待分析";
   shapeMetric.textContent = "-";
   compositionMetric.textContent = "-";
   visualMetric.textContent = "-";
@@ -538,8 +540,8 @@ function renderFallback(risks, advice) {
   ruleReasons.innerHTML = "<li>暂无规则判定依据。</li>";
   riskPoints.innerHTML = risks.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   suggestions.innerHTML = advice.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
-  referenceSummary.textContent = "尚未上传指定对比图。";
-  analysisSummary.textContent = "系统将展示本次“设计图 vs 指定对比图”的最终结论。";
+  if (referenceSummary) referenceSummary.textContent = "尚未上传指定对比图。";
+  if (analysisSummary) analysisSummary.textContent = "系统将展示本次“设计图 vs 指定对比图”的最终结论。";
 }
 
 function exportReport(result) {
