@@ -162,7 +162,7 @@ async function compareLensResult(imageUrl) {
       window.alert("请先上传设计图。");
       return;
     }
-    const response = await fetch(imageUrl, { mode: "cors" });
+    const response = await fetch(`/api/proxy-image?url=${encodeURIComponent(imageUrl)}`);
     if (!response.ok) throw new Error("结果图片暂不允许读取，请打开来源页后下载再上传对比。");
     const file = new File([await response.blob()], "google-lens-result.jpg", { type: response.headers.get("content-type") || "image/jpeg" });
     const result = await ImageRiskCore.buildProfileFromFile(file);
