@@ -26,6 +26,7 @@ const riskPoints = document.getElementById("riskPoints");
 const suggestions = document.getElementById("suggestions");
 const analysisSummary = document.getElementById("analysisSummary");
 const referenceSummary = document.getElementById("referenceSummary");
+const confidenceSummary = document.getElementById("confidenceSummary");
 
 const state = {
   designDataUrl: "",
@@ -214,6 +215,16 @@ function analyzeReferenceOnly({ designProfile, referenceProfile }) {
     reasons.push("轮廓保留度很高，触发“AI 保留原轮廓 = 高风险”规则。");
   }
 
+  if (similarity.overallSimilarity >= 0.9 && similarity.subjectSimilarity >= 0.86) {
+    level = "high";
+    reasons.push("整体与主体同时达到近重复阈值，触发高风险规则。");
+  }
+
+  if (patternType === "composite" && similarity.compositionSimilarity >= 0.78 && similarity.visualSimilarity >= 0.78) {
+    level = "high";
+    reasons.push("组合图案的排列关系与视觉表达均接近，触发高风险规则。");
+  }
+
   reasons.push(
     `整体接近度 ${formatPercent(similarity.overallSimilarity)}，主体 ${formatPercent(similarity.subjectSimilarity)}，构图 ${formatPercent(similarity.compositionSimilarity)}，视觉 ${formatPercent(similarity.visualSimilarity)}。`
   );
@@ -226,6 +237,7 @@ function analyzeReferenceOnly({ designProfile, referenceProfile }) {
       level,
       label: levelToLabel(level),
       score: calculateRiskScore(similarity, level),
+      confidence: calculateConfidence(similarity),
       reviewAdviceText:
         level === "high"
           ? "建议立即人工复核并暂停使用"
@@ -241,7 +253,7 @@ function analyzeReferenceOnly({ designProfile, referenceProfile }) {
       riskPoints: buildRiskPoints(similarity),
       suggestions: buildSuggestions(level, patternType, subjectChanged),
       reasons,
-      summary: `本次仅执行“设计图 vs 指定对比图”分析，最终给出${levelToLabel(level)}结论。`,
+      summary: `本次执行“设计图 vs 指定对比图”分析，给出${levelToLabel(level)}结论；自动判断仅作初筛，建议结合来源和授权情况人工复核。`,
     },
   };
 
@@ -380,6 +392,19 @@ function calculateRiskScore(similarity, level) {
   return Math.min(base, 59);
 }
 
+function calculateConfidence(similarity) {
+  const dimensions = [
+    similarity.subjectSimilarity,
+    similarity.compositionSimilarity,
+    similarity.visualSimilarity,
+  ];
+  const mean = dimensions.reduce((sum, value) => sum + value, 0) / dimensions.length;
+  const variance = dimensions.reduce((sum, value) => sum + (value - mean) ** 2, 0) / dimensions.length;
+  const agreement = Math.max(0, 1 - Math.sqrt(variance) * 2.4);
+  const separation = Math.min(1, Math.abs(mean - 0.5) * 1.4);
+  return Math.round((0.55 + agreement * 0.25 + separation * 0.2) * 100);
+}
+
 function renderResult(result) {
   const evaluation = result.evaluation;
   const similarity = result.referenceResult;
@@ -387,6 +412,7 @@ function renderResult(result) {
   riskBanner.dataset.level = evaluation.level;
   riskBanner.querySelector(".risk-label").textContent = evaluation.label;
   riskScore.textContent = `${evaluation.score}分`;
+  confidenceSummary.textContent = `自动判断置信度：${evaluation.confidence || 0}%（仅作初筛，仍需人工核验来源和授权）`;
 
   shapeMetric.textContent = formatPercent(similarity?.subjectSimilarity);
   compositionMetric.textContent = formatPercent(similarity?.compositionSimilarity);
@@ -411,6 +437,7 @@ function renderFallback(risks, advice) {
   riskBanner.dataset.level = "pending";
   riskBanner.querySelector(".risk-label").textContent = "等待分析";
   riskScore.textContent = "0分";
+  confidenceSummary.textContent = "自动判断置信度：等待分析";
   shapeMetric.textContent = "-";
   compositionMetric.textContent = "-";
   visualMetric.textContent = "-";
