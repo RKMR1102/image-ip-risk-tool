@@ -90,6 +90,8 @@ async function submitToGoogleLens(fileInput, label) {
   const originalLabel = button.textContent;
   button.disabled = true;
   button.textContent = "上传中...";
+  // 必须在用户点击事件仍然有效时打开窗口，否则 await 上传后会被浏览器拦截。
+  const lensWindow = window.open("about:blank", "_blank", "noopener,noreferrer");
 
   try {
     const dataUrl = await readFileAsDataUrl(file);
@@ -103,11 +105,10 @@ async function submitToGoogleLens(fileInput, label) {
       throw new Error(result.error || "图片上传失败。");
     }
 
-    const lensWindow = window.open(
-      `https://lens.google.com/uploadbyurl?url=${encodeURIComponent(result.url)}`,
-      "_blank",
-      "noopener"
-    );
+    const lensUrl = `https://lens.google.com/uploadbyurl?url=${encodeURIComponent(result.url)}`;
+    if (lensWindow && !lensWindow.closed) {
+      lensWindow.location.href = lensUrl;
+    }
     button.textContent = "获取前十项...";
     const searchResponse = await fetch("/api/lens-search", {
       method: "POST",
@@ -120,6 +121,9 @@ async function submitToGoogleLens(fileInput, label) {
     }
     renderLensResults(searchResult.matches || []);
     if (lensWindow && !lensWindow.closed) lensWindow.focus();
+    if (!lensWindow) {
+      throw new Error("浏览器拦截了 Google Lens 新窗口，请允许本站弹窗后重试。");
+    }
   } catch (error) {
     window.alert(`无法打开 Google 搜图：${error.message}`);
   } finally {
@@ -162,7 +166,11 @@ async function compareLensResult(imageUrl) {
     if (!response.ok) throw new Error("结果图片暂不允许读取，请打开来源页后下载再上传对比。");
     const file = new File([await response.blob()], "google-lens-result.jpg", { type: response.headers.get("content-type") || "image/jpeg" });
     const result = await ImageRiskCore.buildProfileFromFile(file);
-    const comparison = analyzeReferenceOnly({ designProfile: state.designProfile, referenceProfile: result.profile });
+    const comparison = analyzeReferenceOnly({
+      designProfile: state.designProfile,
+      referenceProfile: result.profile,
+      notes: notesInput.value.trim(),
+    });
     state.referenceDataUrl = result.dataUrl;
     state.referenceProfile = result.profile;
     compareMatchPreview.src = result.dataUrl;
@@ -198,6 +206,7 @@ analyzeButton.addEventListener("click", () => {
     const result = analyzeReferenceOnly({
       designProfile: state.designProfile,
       referenceProfile: state.referenceProfile,
+      notes: notesInput.value.trim(),
     });
 
     state.lastResult = {
@@ -229,11 +238,12 @@ exportButton.addEventListener("click", () => {
   exportReport(state.lastResult);
 });
 
-function analyzeReferenceOnly({ designProfile, referenceProfile }) {
+function analyzeReferenceOnly({ designProfile, referenceProfile, notes = "" }) {
   const similarity = compareProfiles(designProfile, referenceProfile);
   const patternType = inferPairPatternType(designProfile, referenceProfile);
   const differenceCount = computeDifferenceCount(similarity);
   const subjectChanged = looksSubjectIdentityChanged(similarity);
+  const textSignals = detectTextRiskSignals(notes);
 
   let level = "low";
   const reasons = [];
@@ -286,6 +296,20 @@ function analyzeReferenceOnly({ designProfile, referenceProfile }) {
     reasons.push("组合图案的排列关系与视觉表达均接近，触发高风险规则。");
   }
 
+  if (textSignals.protected) {
+    level = "high";
+    reasons.push("补充说明命中商标、品牌、赛事或明确 IP 线索，按高风险进入人工复核。");
+  }
+
+  if (textSignals.directCopy && level === "low") {
+    level = "medium";
+    reasons.push("补充说明包含‘一样/几乎一样/原图’等直接复制线索，不能仅按低视觉相似度放行。");
+  }
+
+  if (textSignals.license) {
+    reasons.push("检测到授权或图库许可线索；许可不等于视觉相似风险消失，仍需核验购买记录、许可类型和使用范围。");
+  }
+
   reasons.push(
     `整体接近度 ${formatPercent(similarity.overallSimilarity)}，主体 ${formatPercent(similarity.subjectSimilarity)}，构图 ${formatPercent(similarity.compositionSimilarity)}，视觉 ${formatPercent(similarity.visualSimilarity)}。`
   );
@@ -297,7 +321,7 @@ function analyzeReferenceOnly({ designProfile, referenceProfile }) {
     evaluation: {
       level,
       label: levelToLabel(level),
-      score: calculateRiskScore(similarity, level),
+      score: calculateRiskScore(similarity, level, textSignals),
       confidence: calculateConfidence(similarity),
       reviewAdviceText:
         level === "high"
@@ -314,7 +338,7 @@ function analyzeReferenceOnly({ designProfile, referenceProfile }) {
       riskPoints: buildRiskPoints(similarity),
       suggestions: buildSuggestions(level, patternType, subjectChanged),
       reasons,
-      summary: `本次执行“设计图 vs 指定对比图”分析，给出${levelToLabel(level)}结论；自动判断仅作初筛，建议结合来源和授权情况人工复核。`,
+      summary: `本次执行“设计图 vs 指定对比图”分析，给出${levelToLabel(level)}结论；规则重点参考主体、构图、整体视觉及文字/IP线索。自动判断仅作初筛，建议结合来源和授权情况人工复核。`,
     },
   };
 
@@ -417,6 +441,15 @@ function buildRiskPoints(similarity) {
   return items;
 }
 
+function detectTextRiskSignals(notes) {
+  const text = String(notes || "").toLowerCase();
+  return {
+    protected: /(商标|注册|品牌|赛事|ip|版权|影视|角色|logo|trademark|disney|nike|nba|nfl)/i.test(text),
+    directCopy: /(一样|一模一样|几乎一样|原图|不改|无需修改|保持不变|看不出来哪里改|直接使用)/i.test(text),
+    license: /(授权|许可|增强版|购买|shutterstock|license|licensed)/i.test(text),
+  };
+}
+
 function buildSuggestions(level, patternType, subjectChanged) {
   const items = [];
   if (level === "high") {
@@ -436,12 +469,14 @@ function buildSuggestions(level, patternType, subjectChanged) {
   return [...new Set(items)];
 }
 
-function calculateRiskScore(similarity, level) {
+function calculateRiskScore(similarity, level, textSignals = {}) {
   const base = Math.round(
-    similarity.overallSimilarity * 40 +
-    similarity.subjectSimilarity * 25 +
-    similarity.compositionSimilarity * 20 +
-    similarity.visualSimilarity * 15
+    similarity.overallSimilarity * 35 +
+    similarity.subjectSimilarity * 30 +
+    similarity.compositionSimilarity * 25 +
+    similarity.visualSimilarity * 10 +
+    (textSignals.protected ? 15 : 0) +
+    (textSignals.directCopy ? 8 : 0)
   );
 
   if (level === "high") {
