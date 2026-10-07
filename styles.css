@@ -407,8 +407,16 @@ input:focus-visible {
   background: linear-gradient(135deg, #cc5547, #a6312e);
 }
 
+.risk-banner[data-level="direct"] {
+  background: linear-gradient(135deg, #8f1f35, #541022);
+}
+
 .risk-banner[data-level="medium"] {
   background: linear-gradient(135deg, #c08a20, #9b6709);
+}
+
+.risk-banner[data-level="review"] {
+  background: linear-gradient(135deg, #b5792d, #805018);
 }
 
 .risk-banner[data-level="low"] {
@@ -430,6 +438,18 @@ input:focus-visible {
 .result-box,
 .library-item {
   padding: 16px;
+}
+
+.evidence-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+}
+
+.evidence-columns > div > strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--accent-strong);
 }
 
 #lensResults {
