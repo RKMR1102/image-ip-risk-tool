@@ -47,6 +47,11 @@
           </div>
         </div>
 
+        <label class="notes-field">
+          补充说明
+          <textarea id="notesInput" rows="4" placeholder="可选。填写角色名、疑似来源、重点核查元素或使用场景。"></textarea>
+        </label>
+
         <div class="action-row action-row-primary">
           <button id="analyzeButton" class="primary-button" type="button">开始自动比对</button>
           <button id="exportButton" class="secondary-button" type="button">导出分析报告</button>
@@ -62,11 +67,6 @@
           </div>
           <div id="lensResultsGrid" class="result-columns"></div>
         </div>
-
-        <label class="notes-field">
-          补充说明
-          <textarea id="notesInput" rows="4" placeholder="可选。填写角色名、疑似来源、重点核查元素或使用场景。"></textarea>
-        </label>
 
       </section>
 
@@ -147,18 +147,6 @@
       </section>
     </main>
 
-    <section class="panel">
-      <div class="panel-header">
-        <h2>指定对比图结果</h2>
-        <p id="analysisSummary" class="summary-copy">系统将展示本次“设计图 vs 指定对比图”的最终结论。</p>
-      </div>
-
-      <div class="result-box">
-        <h3>相似度摘要</h3>
-        <p id="referenceSummary" class="summary-copy">尚未上传指定对比图。</p>
-        <p id="confidenceSummary" class="summary-copy">自动判断置信度：等待分析</p>
-      </div>
-    </section>
   </div>
 
   <script src="shared-core.js"></script>
