@@ -26,19 +26,25 @@
         </div>
 
         <div class="upload-grid">
-          <label class="dropzone">
-            <span class="dropzone-title">设计图</span>
-            <input id="designInput" type="file" accept="image/*" />
-            <img id="designPreview" alt="设计图预览" hidden />
-            <span id="designHint" class="dropzone-hint">点击选择或拖入图片</span>
-          </label>
+          <div class="upload-card">
+            <label class="dropzone">
+              <span class="dropzone-title">设计图</span>
+              <input id="designInput" type="file" accept="image/*" />
+              <img id="designPreview" alt="设计图预览" hidden />
+              <span id="designHint" class="dropzone-hint">点击选择或拖入图片</span>
+            </label>
+            <button id="searchDesignButton" class="secondary-button" type="button">用 Google 搜设计图</button>
+          </div>
 
-          <label class="dropzone">
-            <span class="dropzone-title">指定对比图</span>
-            <input id="referenceInput" type="file" accept="image/*" />
-            <img id="referencePreview" alt="指定对比图预览" hidden />
-            <span id="referenceHint" class="dropzone-hint">请上传需要比对的参考图</span>
-          </label>
+          <div class="upload-card">
+            <label class="dropzone">
+              <span class="dropzone-title">指定对比图</span>
+              <input id="referenceInput" type="file" accept="image/*" />
+              <img id="referencePreview" alt="指定对比图预览" hidden />
+              <span id="referenceHint" class="dropzone-hint">请上传需要比对的参考图</span>
+            </label>
+            <button id="searchReferenceButton" class="secondary-button" type="button">用 Google 搜对比图</button>
+          </div>
         </div>
 
         <label class="notes-field">

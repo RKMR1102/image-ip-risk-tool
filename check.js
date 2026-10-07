@@ -7,6 +7,8 @@ const referenceHint = document.getElementById("referenceHint");
 const notesInput = document.getElementById("notesInput");
 const analyzeButton = document.getElementById("analyzeButton");
 const exportButton = document.getElementById("exportButton");
+const searchDesignButton = document.getElementById("searchDesignButton");
+const searchReferenceButton = document.getElementById("searchReferenceButton");
 
 const riskBanner = document.getElementById("riskBanner");
 const riskScore = document.getElementById("riskScore");
@@ -64,6 +66,50 @@ referenceInput.addEventListener("change", async (event) => {
   compareMatchPreview.src = result.dataUrl;
   referenceHint.textContent = file.name;
 });
+
+searchDesignButton.addEventListener("click", () => {
+  submitToGoogleLens(designInput, "设计图");
+});
+
+searchReferenceButton.addEventListener("click", () => {
+  submitToGoogleLens(referenceInput, "指定对比图");
+});
+
+function submitToGoogleLens(fileInput, label) {
+  const file = fileInput.files?.[0];
+  if (!file) {
+    window.alert(`请先上传${label}。`);
+    return;
+  }
+
+  // Google Lens accepts a multipart image upload. The existing file input is
+  // temporarily placed in a form so the browser sends the selected file only
+  // after the user explicitly clicks the search button.
+  const form = document.createElement("form");
+  form.method = "post";
+  form.action = "https://lens.google.com/v3/upload?hl=zh-CN";
+  form.target = "_blank";
+  form.enctype = "multipart/form-data";
+  form.style.display = "none";
+
+  const imageContent = document.createElement("input");
+  imageContent.type = "hidden";
+  imageContent.name = "image_content";
+  imageContent.value = "";
+
+  const originalParent = fileInput.parentElement;
+  const originalNextSibling = fileInput.nextSibling;
+  form.append(fileInput, imageContent);
+  document.body.appendChild(form);
+  form.submit();
+
+  if (originalNextSibling) {
+    originalParent.insertBefore(fileInput, originalNextSibling);
+  } else {
+    originalParent.appendChild(fileInput);
+  }
+  form.remove();
+}
 
 analyzeButton.addEventListener("click", () => {
   if (!state.designProfile || !state.referenceProfile) {
