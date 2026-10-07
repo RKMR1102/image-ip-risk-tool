@@ -315,7 +315,7 @@ function analyzeReferenceOnly({ designProfile, referenceProfile, notes = "" }) {
   // 评分以新版模型为唯一档位来源，避免旧的规则先定等级、再强行把分数推入对应区间。
   const score = calculateRiskScore(similarity, level, textSignals, patternType);
   level = scoreToLevel(score);
-  reasons.push(`新版评分模型：构图25%、主体20%、组合关系20%、局部细节15%、色彩10%、文字/IP10%；公共元素会降权，最终得分 ${score} 分。`);
+  reasons.push(`新版评分模型：构图25%、主体20%、组合关系20%、局部细节15%、色彩10%、文字/IP10%；最终得分 ${score} 分。`);
 
   const result = {
     analyzedAt: new Date().toLocaleString("zh-CN", { hour12: false }),
@@ -450,7 +450,6 @@ function detectTextRiskSignals(notes) {
     protected: /(商标|注册|品牌|赛事|ip|版权|影视|角色|logo|trademark|disney|nike|nba|nfl)/i.test(text),
     directCopy: /(一样|一模一样|几乎一样|原图|不改|无需修改|保持不变|看不出来哪里改|直接使用)/i.test(text),
     license: /(授权|许可|增强版|购买|shutterstock|license|licensed)/i.test(text),
-    common: /(猫|狗|花|月亮|星星|山水|宇宙|几何|渐变|复古|梦幻|极简|国潮|科技感|公共素材|通用元素)/i.test(text),
   };
 }
 
@@ -488,13 +487,8 @@ function calculateRiskScore(similarity, level, textSignals = {}, patternType = "
     composition < 0.45,
     detail < 0.45,
   ].filter(Boolean).length;
-  const publicPenalty = (textSignals.common ? 8 : 0) + (patternType === "single" && subject < 0.72 ? 3 : 0);
-  const originalityAdjustment =
-    (patternType === "composite" && combination >= 0.68 ? 6 : 0) +
-    (detail >= 0.8 && subject >= 0.72 ? 5 : 0) -
-    (textSignals.common ? 4 : 0);
   const divergencePenalty = majorDifferences * 14;
-  return Math.max(0, Math.min(100, rawScore - publicPenalty + originalityAdjustment - divergencePenalty));
+  return Math.max(0, Math.min(100, rawScore - divergencePenalty));
 }
 
 function scoreToLevel(score) {
