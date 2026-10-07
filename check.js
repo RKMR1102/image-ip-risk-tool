@@ -478,12 +478,12 @@ function calculateRiskScore(similarity, level, textSignals = {}) {
   );
 
   if (level === "high") {
-    return Math.max(85, base);
+    return Math.min(100, Math.max(80, base));
   }
   if (level === "medium") {
-    return Math.min(84, Math.max(60, base));
+    return Math.min(79, Math.max(70, base));
   }
-  return Math.min(base, 59);
+  return Math.min(base, 69);
 }
 
 function calculateConfidence(similarity) {
