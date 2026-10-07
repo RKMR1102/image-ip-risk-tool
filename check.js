@@ -186,10 +186,15 @@ function readFileAsDataUrl(file) {
 
 analyzeButton.addEventListener("click", () => {
   if (!state.designProfile || !state.referenceProfile) {
+    const missing = [
+      !state.designProfile ? "设计图" : "",
+      !state.referenceProfile ? "指定对比图" : "",
+    ].filter(Boolean).join("、");
     renderFallback(
-      ["请同时上传设计图和指定对比图。"],
-      ["补齐两张图片后再开始自动比对。"]
+      [`还缺少：${missing}。`],
+      ["请补齐两张图片后再开始自动比对。"]
     );
+    window.alert(`请先上传${missing}。`);
     return;
   }
 
