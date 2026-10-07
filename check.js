@@ -24,12 +24,6 @@ const compareMatchLabel = document.getElementById("compareMatchLabel");
 const ruleReasons = document.getElementById("ruleReasons");
 const riskPoints = document.getElementById("riskPoints");
 const suggestions = document.getElementById("suggestions");
-const riskCategories = document.getElementById("riskCategories");
-const reviewReasons = document.getElementById("reviewReasons");
-const protectableExpression = document.getElementById("protectableExpression");
-const commonElements = document.getElementById("commonElements");
-const similarityEvidence = document.getElementById("similarityEvidence");
-const differences = document.getElementById("differences");
 const analysisSummary = document.getElementById("analysisSummary");
 const referenceSummary = document.getElementById("referenceSummary");
 const confidenceSummary = document.getElementById("confidenceSummary");
@@ -172,13 +166,6 @@ async function compareLensResult(imageUrl) {
     });
     state.referenceDataUrl = result.dataUrl;
     state.referenceProfile = result.profile;
-    state.lastResult = {
-      analyzedAt: comparison.analyzedAt,
-      notes: notesInput.value.trim(),
-      designFile: designHint.textContent,
-      referenceFile: "Google 搜图结果",
-      response: comparison,
-    };
     compareMatchPreview.src = result.dataUrl;
     compareMatchPreview.hidden = false;
     renderResult(comparison);
@@ -252,72 +239,78 @@ exportButton.addEventListener("click", () => {
 function analyzeReferenceOnly({ designProfile, referenceProfile, notes = "" }) {
   const similarity = compareProfiles(designProfile, referenceProfile);
   const patternType = inferPairPatternType(designProfile, referenceProfile);
-  const textSignals = detectTextRiskSignals(notes);
+  const differenceCount = computeDifferenceCount(similarity);
   const subjectChanged = looksSubjectIdentityChanged(similarity);
-  const evidence = buildRuleEvidence(similarity, patternType, textSignals);
-  const scoreParts = calculateRuleScore(similarity, textSignals, patternType);
-  let score = scoreParts.score;
-  let level = scoreToLevel(score);
-  const escalationReasons = [];
-  const majorDifferences = getMajorDifferenceCount(similarity);
+  const textSignals = detectTextRiskSignals(notes);
 
-  if (similarity.overallSimilarity >= 0.9 && similarity.subjectSimilarity >= 0.86 && majorDifferences === 0) {
-    score = Math.max(score, 85);
+  let level = "low";
+  const reasons = [];
+
+  if (patternType === "single") {
+    if (!subjectChanged && similarity.subjectSimilarity >= 0.78 && similarity.visualSimilarity >= 0.68) {
+      level = "high";
+      reasons.push("判定为单一图案，主体未变且视觉仍较接近，按高风险处理。");
+    } else if (!subjectChanged && similarity.subjectSimilarity >= 0.62 && similarity.compositionSimilarity >= 0.6) {
+      level = "medium";
+      reasons.push("判定为单一图案，主体基本未变，但局部已有调整，按中风险处理。");
+    } else {
+      level = "low";
+      reasons.push("判定为单一图案，主体已变化或整体视觉差异较明显，按低风险处理。");
+    }
+  } else {
+    const differenceRatio = 1 - (similarity.subjectSimilarity * 0.55 + similarity.compositionSimilarity * 0.45);
+    if (differenceRatio < 0.28 && similarity.visualSimilarity >= 0.66) {
+      level = "high";
+      reasons.push(`判定为组合图案，结构差异约 ${Math.round(differenceRatio * 100)}%，且视觉较接近，按高风险处理。`);
+    } else if (differenceRatio < 0.42 && similarity.overallSimilarity >= 0.58) {
+      level = "medium";
+      reasons.push(`判定为组合图案，结构差异约 ${Math.round(differenceRatio * 100)}%，按中风险处理。`);
+    } else {
+      level = "low";
+      reasons.push(`判定为组合图案，结构差异约 ${Math.round(differenceRatio * 100)}%，按低风险处理。`);
+    }
+  }
+
+  if (differenceCount === 3) {
+    level = "low";
+    reasons.push("三项核心维度均明显不同，最终按低风险处理。");
+  } else if (differenceCount === 2 && level === "high") {
+    level = "medium";
+    reasons.push("三项核心维度中有 2 项明显不同，高风险下调为中风险。");
+  }
+
+  if (similarity.maskSimilarity >= 0.93 && similarity.edgeSimilarity >= 0.86) {
     level = "high";
-    escalationReasons.push("整体、主体和细节均达到近重复阈值，触发疑似直接复制升级。");
-  } else if (
-    similarity.maskSimilarity >= 0.93 &&
-    similarity.edgeSimilarity >= 0.86 &&
-    similarity.subjectSimilarity >= 0.78 &&
-    similarity.compositionSimilarity >= 0.72 &&
-    similarity.visualSimilarity >= 0.7 &&
-    majorDifferences === 0
-  ) {
-    score = Math.max(score, 70);
-    level = scoreToLevel(score);
-    escalationReasons.push("主体、构图、细节和轮廓均保持高度对应，触发强制人工复核规则。");
-  } else if (majorDifferences >= 2) {
-    score = Math.min(score, 29);
-    level = "low";
-    escalationReasons.push("主体、构图或细节至少两项明显不同，按明显差异规则封顶为低风险。");
-  } else if (majorDifferences === 1 && score >= 70) {
-    score = 69;
-    level = "low";
-    escalationReasons.push("存在一项核心维度明显不同，风险分数封顶为低风险，避免单一指标误报高风险；仍建议人工复核。");
+    reasons.push("轮廓保留度很高，触发“AI 保留原轮廓 = 高风险”规则。");
   }
-  if (textSignals.protected) {
-    if (majorDifferences === 0) {
-      score = Math.max(score, 70);
-      level = scoreToLevel(score);
-    } else {
-      score = Math.min(score, 69);
-      level = "low";
-    }
-    escalationReasons.push("补充说明包含商标、品牌、赛事或明确 IP 线索；即使图片差异明显，也必须人工核验权属和来源，但不会仅凭文字把视觉风险强行判高。");
-  }
-  if (textSignals.directCopy) {
-    if (majorDifferences === 0) {
-      score = Math.max(score, 70);
-      level = scoreToLevel(score);
-    } else {
-      score = Math.min(score, 69);
-      level = "low";
-    }
-    escalationReasons.push("补充说明包含直接复制或换色/镜像/裁剪线索，不能按低风险放行。");
-  }
-  if (textSignals.license) escalationReasons.push("检测到授权或图库许可线索；仍需核验许可类型、购买记录和使用范围。");
 
-  const reasons = [
-    `按“构图25%、核心图案20%、组合关系20%、局部细节15%、色彩10%、文字/标识10%”模型计算，原始评分 ${scoreParts.rawScore} 分。`,
-    `公共/惯用元素修正 ${scoreParts.publicPenalty} 分，独创性修正 ${scoreParts.originalityAdjustment >= 0 ? "+" : ""}${scoreParts.originalityAdjustment} 分，明显差异修正 ${scoreParts.divergencePenalty || 0} 分，最终评分 ${score} 分。`,
-    `当前按${patternType === "composite" ? "组合" : "单一"}图案处理；主题相同本身不作为侵权结论，重点观察具体表达和元素关系。`,
-    ...escalationReasons,
-    `视觉代理指标：主体 ${formatPercent(similarity.subjectSimilarity)}，构图 ${formatPercent(similarity.compositionSimilarity)}，细节 ${formatPercent(similarity.visualSimilarity)}，色彩 ${formatPercent(similarity.colorSimilarity)}。`,
-  ];
-  const categories = buildRiskCategories(scoreParts, similarity, textSignals);
-  const reviewItems = buildReviewReasons(score, textSignals, evidence);
-  const protectable = buildProtectableExpression(similarity, patternType, textSignals);
-  const common = buildCommonElements(similarity, textSignals);
+  if (similarity.overallSimilarity >= 0.9 && similarity.subjectSimilarity >= 0.86) {
+    level = "high";
+    reasons.push("整体与主体同时达到近重复阈值，触发高风险规则。");
+  }
+
+  if (patternType === "composite" && similarity.compositionSimilarity >= 0.78 && similarity.visualSimilarity >= 0.78) {
+    level = "high";
+    reasons.push("组合图案的排列关系与视觉表达均接近，触发高风险规则。");
+  }
+
+  if (textSignals.protected) {
+    level = "high";
+    reasons.push("补充说明命中商标、品牌、赛事或明确 IP 线索，按高风险进入人工复核。");
+  }
+
+  if (textSignals.directCopy && level === "low") {
+    level = "medium";
+    reasons.push("补充说明包含‘一样/几乎一样/原图’等直接复制线索，不能仅按低视觉相似度放行。");
+  }
+
+  if (textSignals.license) {
+    reasons.push("检测到授权或图库许可线索；许可不等于视觉相似风险消失，仍需核验购买记录、许可类型和使用范围。");
+  }
+
+  reasons.push(
+    `整体接近度 ${formatPercent(similarity.overallSimilarity)}，主体 ${formatPercent(similarity.subjectSimilarity)}，构图 ${formatPercent(similarity.compositionSimilarity)}，视觉 ${formatPercent(similarity.visualSimilarity)}。`
+  );
 
   const result = {
     analyzedAt: new Date().toLocaleString("zh-CN", { hour12: false }),
@@ -326,26 +319,24 @@ function analyzeReferenceOnly({ designProfile, referenceProfile, notes = "" }) {
     evaluation: {
       level,
       label: levelToLabel(level),
-      score,
+      score: calculateRiskScore(similarity, level, textSignals),
       confidence: calculateConfidence(similarity),
       reviewAdviceText:
-        level === "high" ? "建议立即人工复核并暂停使用" : level === "medium" ? "建议补充权属材料并人工复核" : (majorDifferences > 0 || textSignals.protected || textSignals.directCopy ? "图片差异明显，但仍建议核验来源和权属" : "可进入人工抽检流程"),
+        level === "high"
+          ? "建议立即人工复核并暂停使用"
+          : level === "medium"
+            ? "建议修改后再进行一轮比对"
+            : "可进入人工抽检流程",
       usageAdviceText:
-        level === "high" ? "不建议直接使用" : level === "medium" ? "修改完成后再评估是否可用" : "建议保留记录后谨慎使用",
+        level === "high"
+          ? "不建议直接使用"
+          : level === "medium"
+            ? "修改完成后再评估是否可用"
+            : "建议保留记录后谨慎使用",
       riskPoints: buildRiskPoints(similarity),
       suggestions: buildSuggestions(level, patternType, subjectChanged),
-      copyrightRisk: categories.copyright,
-      trademarkRisk: categories.trademark,
-      reviewRequired: level !== "low" || majorDifferences > 0 || textSignals.protected || textSignals.directCopy,
-      directCopySuspected: score >= 85 && majorDifferences === 0,
-      protectableExpression: protectable,
-      commonElements: common,
-      similarityEvidence: evidence.similarity,
-      differences: evidence.differences,
-      reviewReasons: reviewItems,
-      riskCategories: categories.items,
       reasons,
-      summary: `本次执行“设计图 vs 指定对比图”分析，评分 ${score} 分，给出${levelToLabel(level)}结论。系统已区分具体表达与公共题材，并将版权风险、商标/IP风险分开提示；自动判断仅作初筛，不能替代律师或司法认定。`,
+      summary: `本次执行“设计图 vs 指定对比图”分析，给出${levelToLabel(level)}结论；规则重点参考主体、构图、整体视觉及文字/IP线索。自动判断仅作初筛，建议结合来源和授权情况人工复核。`,
     },
   };
 
@@ -448,123 +439,12 @@ function buildRiskPoints(similarity) {
   return items;
 }
 
-function calculateRuleScore(similarity, textSignals, patternType) {
-  const composition = similarity.compositionSimilarity;
-  const subject = similarity.subjectSimilarity;
-  const combination = (similarity.compositionSimilarity + similarity.blockSimilarity) / 2;
-  const detail = (similarity.visualSimilarity + similarity.edgeSimilarity + similarity.maskSimilarity) / 3;
-  const color = similarity.colorSimilarity;
-  const text = textSignals.protected ? 0.85 : textSignals.directCopy ? 0.72 : 0;
-  const rawScore = Math.round(
-    composition * 25 + subject * 20 + combination * 20 + detail * 15 + color * 10 + text * 10
-  );
-
-  // 纯像素特征无法识别具体物体，因此用“低复杂度/常见风格”作保守代理，
-  // 并把补充说明中的公共题材作为明确的降权信号。它不会把强复制证据抹掉。
-  const publicPenalty = Math.round(
-    (textSignals.common ? 8 : 0) + (patternType === "single" && subject < 0.72 ? 3 : 0)
-  );
-  const originalityAdjustment = Math.round(
-    (patternType === "composite" && combination >= 0.68 ? 6 : 0) +
-    (detail >= 0.8 && subject >= 0.72 ? 5 : 0) -
-    (textSignals.common ? 4 : 0)
-  );
-  const majorDifferences = getMajorDifferenceCount(similarity);
-  const divergencePenalty = majorDifferences * 14;
-  const score = Math.max(0, Math.min(100, rawScore - publicPenalty + originalityAdjustment - divergencePenalty));
-  return { rawScore, publicPenalty, originalityAdjustment, divergencePenalty, score };
-}
-
-function getMajorDifferenceCount(similarity) {
-  return [
-    similarity.subjectSimilarity < 0.5,
-    similarity.compositionSimilarity < 0.45,
-    similarity.visualSimilarity < 0.45,
-  ].filter(Boolean).length;
-}
-
-function scoreToLevel(score) {
-  if (score > 80) return "high";
-  if (score >= 70) return "medium";
-  return "low";
-}
-
-function buildRuleEvidence(similarity, patternType, textSignals) {
-  const similarityItems = [];
-  const differences = [];
-  if (similarity.compositionSimilarity >= 0.62) similarityItems.push("视觉中心、位置比例或留白关系存在对应。");
-  if (similarity.subjectSimilarity >= 0.62) similarityItems.push("主体轮廓、姿态或核心识别关系接近。");
-  if (patternType === "composite" && similarity.blockSimilarity >= 0.62) similarityItems.push("多个元素的数量/排列区域呈现相似组合关系。");
-  if (similarity.visualSimilarity >= 0.62) similarityItems.push("线条、局部细节、明暗或整体视觉表达存在对应。");
-  if (similarity.colorSimilarity >= 0.7) similarityItems.push("主要色彩及色块分布较接近（仅作辅助证据）。");
-  if (similarity.compositionSimilarity < 0.62) differences.push("整体构图或视觉重心有明显变化。");
-  if (similarity.subjectSimilarity < 0.62) differences.push("主体轮廓、姿态或比例差异明显。");
-  if (similarity.visualSimilarity < 0.62) differences.push("线条、纹理和局部细节差异明显。");
-  if (similarity.colorSimilarity < 0.7) differences.push("色彩或明暗分布不同，但色彩不能单独决定侵权。");
-  if (textSignals.common) differences.push("补充说明包含常见题材/公共元素，应降低其单独证明力。");
-  if (!similarityItems.length) similarityItems.push("未发现足够强的具体表达对应，仍建议结合来源人工复核。");
-  if (!differences.length) differences.push("当前代理指标未发现明显差异；需要核验创作来源和权属材料。");
-  return { similarity: similarityItems, differences };
-}
-
-function buildRiskCategories(parts, similarity, textSignals) {
-  const copyrightScore = Math.round(
-    similarity.compositionSimilarity * 30 + similarity.subjectSimilarity * 25 +
-    ((similarity.blockSimilarity + similarity.visualSimilarity) / 2) * 30 + similarity.colorSimilarity * 5 +
-    (textSignals.directCopy ? 10 : 0)
-  );
-  const trademarkScore = Math.round(
-    (textSignals.protected ? 65 : 0) + (textSignals.directCopy ? 20 : 0) +
-    similarity.subjectSimilarity * 10 + similarity.compositionSimilarity * 5
-  );
-  return {
-    copyright: scoreToCategory(copyrightScore),
-    trademark: scoreToCategory(trademarkScore),
-    items: [`版权风险：${scoreToCategory(copyrightScore)}（具体表达、构图、主体与组合关系）`, `商标/IP风险：${scoreToCategory(trademarkScore)}（文字、标识、品牌和来源混淆线索）`],
-  };
-}
-
-function scoreToCategory(score) {
-  if (score >= 70) return "高";
-  if (score >= 50) return "中";
-  return "低";
-}
-
-function buildReviewReasons(score, textSignals, evidence) {
-  const items = [];
-  if (score >= 30) items.push("评分达到需要复核区间，不能仅凭自动分数作最终结论。");
-  if (textSignals.protected) items.push("涉及品牌、商标、赛事、影视角色或明确 IP 线索。");
-  if (textSignals.directCopy) items.push("存在复制、换色、镜像、裁剪或局部替换的描述线索。");
-  if (evidence.similarity.length >= 3) items.push("至少三个具体表达维度出现对应，需要核验接触可能和创作时间。");
-  if (!items.length) items.push("暂未触发强制升级；仍建议保存来源、授权和创作过程记录。");
-  return items;
-}
-
-function buildProtectableExpression(similarity, patternType, textSignals) {
-  const items = [];
-  if (similarity.subjectSimilarity >= 0.62) items.push("主体轮廓、比例、姿态及核心造型");
-  if (similarity.compositionSimilarity >= 0.62) items.push("视觉中心、构图布局、层次和留白关系");
-  if (patternType === "composite" && similarity.blockSimilarity >= 0.62) items.push("多个元素的选择、排列及相互遮挡关系");
-  if (similarity.visualSimilarity >= 0.62) items.push("线条、纹理、阴影和局部装饰的组合");
-  if (textSignals.protected) items.push("补充说明涉及的文字、标志或品牌识别元素（需核验权利）");
-  return items.length ? items : ["暂未发现足够明确的独创性表达对应"];
-}
-
-function buildCommonElements(similarity, textSignals) {
-  const items = [];
-  if (textSignals.common) items.push("补充说明提到的常见题材、公共领域素材或行业惯用元素");
-  if (similarity.colorSimilarity >= 0.7) items.push("相近配色、渐变、明暗关系（不能单独认定侵权）");
-  if (!items.length) items.push("目前未从图片特征中识别出明确公共元素；常见对象仍需人工区分题材与具体表达");
-  return items;
-}
-
 function detectTextRiskSignals(notes) {
   const text = String(notes || "").toLowerCase();
   return {
     protected: /(商标|注册|品牌|赛事|ip|版权|影视|角色|logo|trademark|disney|nike|nba|nfl)/i.test(text),
     directCopy: /(一样|一模一样|几乎一样|原图|不改|无需修改|保持不变|看不出来哪里改|直接使用)/i.test(text),
     license: /(授权|许可|增强版|购买|shutterstock|license|licensed)/i.test(text),
-    common: /(猫|狗|花|月亮|星星|山水|宇宙|几何|渐变|复古|梦幻|极简|国潮|科技感|公共素材|通用元素)/i.test(text),
   };
 }
 
@@ -639,12 +519,6 @@ function renderResult(result) {
   ruleReasons.innerHTML = evaluation.reasons.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   riskPoints.innerHTML = evaluation.riskPoints.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   suggestions.innerHTML = evaluation.suggestions.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
-  renderList(riskCategories, evaluation.riskCategories);
-  renderList(reviewReasons, evaluation.reviewReasons);
-  renderList(protectableExpression, evaluation.protectableExpression);
-  renderList(commonElements, evaluation.commonElements);
-  renderList(similarityEvidence, evaluation.similarityEvidence);
-  renderList(differences, evaluation.differences);
 
   if (referenceSummary) {
     referenceSummary.textContent = similarity
@@ -671,12 +545,6 @@ function renderFallback(risks, advice) {
   ruleReasons.innerHTML = "<li>暂无规则判定依据。</li>";
   riskPoints.innerHTML = risks.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   suggestions.innerHTML = advice.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
-  renderList(riskCategories, ["等待分析结果。"]);
-  renderList(reviewReasons, ["等待分析结果。"]);
-  renderList(protectableExpression, ["等待分析结果。"]);
-  renderList(commonElements, ["等待分析结果。"]);
-  renderList(similarityEvidence, ["等待分析结果。"]);
-  renderList(differences, ["等待分析结果。"]);
   if (referenceSummary) referenceSummary.textContent = "尚未上传指定对比图。";
   if (analysisSummary) analysisSummary.textContent = "系统将展示本次“设计图 vs 指定对比图”的最终结论。";
 }
@@ -696,10 +564,6 @@ function exportReport(result) {
     `风险评分：${response.evaluation.score}分`,
     `审核建议：${response.evaluation.reviewAdviceText}`,
     `使用建议：${response.evaluation.usageAdviceText}`,
-    `自动判断置信度：${response.evaluation.confidence}%（仅作初筛）`,
-    `版权风险：${response.evaluation.copyrightRisk}`,
-    `商标/IP风险：${response.evaluation.trademarkRisk}`,
-    `需要人工复核：${response.evaluation.reviewRequired ? "是" : "否"}`,
     "",
     "二、相似度摘要",
     `整体：${formatPercent(similarity.overallSimilarity)}`,
@@ -713,22 +577,7 @@ function exportReport(result) {
     "四、风险关注点",
     ...response.evaluation.riskPoints.map((item, index) => `${index + 1}. ${item}`),
     "",
-    "五、可保护表达",
-    ...response.evaluation.protectableExpression.map((item, index) => `${index + 1}. ${item}`),
-    "",
-    "六、公共或弱保护元素",
-    ...response.evaluation.commonElements.map((item, index) => `${index + 1}. ${item}`),
-    "",
-    "七、相似证据",
-    ...response.evaluation.similarityEvidence.map((item, index) => `${index + 1}. ${item}`),
-    "",
-    "八、主要差异",
-    ...response.evaluation.differences.map((item, index) => `${index + 1}. ${item}`),
-    "",
-    "九、需人工复核",
-    ...response.evaluation.reviewReasons.map((item, index) => `${index + 1}. ${item}`),
-    "",
-    "十、修改建议",
+    "五、修改建议",
     ...response.evaluation.suggestions.map((item, index) => `${index + 1}. ${item}`),
   ].join("\n");
 
@@ -789,11 +638,6 @@ function levelToLabel(level) {
     return "中风险";
   }
   return "低风险";
-}
-
-function renderList(element, items) {
-  if (!element) return;
-  element.innerHTML = (items || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
 }
 
 function formatPercent(value) {
