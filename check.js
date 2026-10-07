@@ -249,25 +249,25 @@ function analyzeReferenceOnly({ designProfile, referenceProfile, notes = "" }) {
   if (patternType === "single") {
     if (!subjectChanged && similarity.subjectSimilarity >= 0.78 && similarity.visualSimilarity >= 0.68) {
       level = "high";
-      reasons.push("判定为单一图案，主体未变且视觉仍较接近，按高风险处理。");
+      reasons.push("判定为单一图案，主体未变且视觉仍较接近，作为高相似度提示。");
     } else if (!subjectChanged && similarity.subjectSimilarity >= 0.62 && similarity.compositionSimilarity >= 0.6) {
       level = "medium";
-      reasons.push("判定为单一图案，主体基本未变，但局部已有调整，按中风险处理。");
+      reasons.push("判定为单一图案，主体基本未变，但局部已有调整，作为中等相似度提示。");
     } else {
       level = "low";
-      reasons.push("判定为单一图案，主体已变化或整体视觉差异较明显，按低风险处理。");
+      reasons.push("判定为单一图案，主体已变化或整体视觉差异较明显。");
     }
   } else {
     const differenceRatio = 1 - (similarity.subjectSimilarity * 0.55 + similarity.compositionSimilarity * 0.45);
     if (differenceRatio < 0.28 && similarity.visualSimilarity >= 0.66) {
       level = "high";
-      reasons.push(`判定为组合图案，结构差异约 ${Math.round(differenceRatio * 100)}%，且视觉较接近，按高风险处理。`);
+      reasons.push(`判定为组合图案，结构差异约 ${Math.round(differenceRatio * 100)}%，且视觉较接近，作为高相似度提示。`);
     } else if (differenceRatio < 0.42 && similarity.overallSimilarity >= 0.58) {
       level = "medium";
-      reasons.push(`判定为组合图案，结构差异约 ${Math.round(differenceRatio * 100)}%，按中风险处理。`);
+      reasons.push(`判定为组合图案，结构差异约 ${Math.round(differenceRatio * 100)}%，作为中等相似度提示。`);
     } else {
       level = "low";
-      reasons.push(`判定为组合图案，结构差异约 ${Math.round(differenceRatio * 100)}%，按低风险处理。`);
+      reasons.push(`判定为组合图案，结构差异约 ${Math.round(differenceRatio * 100)}%。`);
     }
   }
 
@@ -281,22 +281,22 @@ function analyzeReferenceOnly({ designProfile, referenceProfile, notes = "" }) {
 
   if (similarity.maskSimilarity >= 0.93 && similarity.edgeSimilarity >= 0.86) {
     level = "high";
-    reasons.push("轮廓保留度很高，触发“AI 保留原轮廓 = 高风险”规则。");
+    reasons.push("轮廓保留度很高，触发“AI 保留原轮廓”相似度提示，最终以新版评分为准。");
   }
 
   if (similarity.overallSimilarity >= 0.9 && similarity.subjectSimilarity >= 0.86) {
     level = "high";
-    reasons.push("整体与主体同时达到近重复阈值，触发高风险规则。");
+    reasons.push("整体与主体同时达到近重复阈值，触发近重复相似度提示，最终以新版评分为准。");
   }
 
   if (patternType === "composite" && similarity.compositionSimilarity >= 0.78 && similarity.visualSimilarity >= 0.78) {
     level = "high";
-    reasons.push("组合图案的排列关系与视觉表达均接近，触发高风险规则。");
+    reasons.push("组合图案的排列关系与视觉表达均接近，触发组合关系相似度提示，最终以新版评分为准。");
   }
 
   if (textSignals.protected) {
     level = "high";
-    reasons.push("补充说明命中商标、品牌、赛事或明确 IP 线索，按高风险进入人工复核。");
+    reasons.push("补充说明命中商标、品牌、赛事或明确 IP 线索，进入人工复核。");
   }
 
   if (textSignals.directCopy && level === "low") {
@@ -312,6 +312,11 @@ function analyzeReferenceOnly({ designProfile, referenceProfile, notes = "" }) {
     `整体接近度 ${formatPercent(similarity.overallSimilarity)}，主体 ${formatPercent(similarity.subjectSimilarity)}，构图 ${formatPercent(similarity.compositionSimilarity)}，视觉 ${formatPercent(similarity.visualSimilarity)}。`
   );
 
+  // 评分以新版模型为唯一档位来源，避免旧的规则先定等级、再强行把分数推入对应区间。
+  const score = calculateRiskScore(similarity, level, textSignals, patternType);
+  level = scoreToLevel(score);
+  reasons.push(`新版评分模型：构图25%、主体20%、组合关系20%、局部细节15%、色彩10%、文字/IP10%；公共元素会降权，最终得分 ${score} 分。`);
+
   const result = {
     analyzedAt: new Date().toLocaleString("zh-CN", { hour12: false }),
     referenceResult: similarity,
@@ -319,7 +324,7 @@ function analyzeReferenceOnly({ designProfile, referenceProfile, notes = "" }) {
     evaluation: {
       level,
       label: levelToLabel(level),
-      score: calculateRiskScore(similarity, level, textSignals),
+      score,
       confidence: calculateConfidence(similarity),
       reviewAdviceText:
         level === "high"
@@ -445,6 +450,7 @@ function detectTextRiskSignals(notes) {
     protected: /(商标|注册|品牌|赛事|ip|版权|影视|角色|logo|trademark|disney|nike|nba|nfl)/i.test(text),
     directCopy: /(一样|一模一样|几乎一样|原图|不改|无需修改|保持不变|看不出来哪里改|直接使用)/i.test(text),
     license: /(授权|许可|增强版|购买|shutterstock|license|licensed)/i.test(text),
+    common: /(猫|狗|花|月亮|星星|山水|宇宙|几何|渐变|复古|梦幻|极简|国潮|科技感|公共素材|通用元素)/i.test(text),
   };
 }
 
@@ -467,23 +473,34 @@ function buildSuggestions(level, patternType, subjectChanged) {
   return [...new Set(items)];
 }
 
-function calculateRiskScore(similarity, level, textSignals = {}) {
-  const base = Math.round(
-    similarity.overallSimilarity * 35 +
-    similarity.subjectSimilarity * 30 +
-    similarity.compositionSimilarity * 25 +
-    similarity.visualSimilarity * 10 +
-    (textSignals.protected ? 15 : 0) +
-    (textSignals.directCopy ? 8 : 0)
+function calculateRiskScore(similarity, level, textSignals = {}, patternType = "composite") {
+  const composition = similarity.compositionSimilarity;
+  const subject = similarity.subjectSimilarity;
+  const combination = (similarity.compositionSimilarity + similarity.blockSimilarity) / 2;
+  const detail = (similarity.visualSimilarity + similarity.edgeSimilarity + similarity.maskSimilarity) / 3;
+  const color = similarity.colorSimilarity;
+  const text = textSignals.protected ? 0.85 : textSignals.directCopy ? 0.72 : 0;
+  const rawScore = Math.round(
+    composition * 25 + subject * 20 + combination * 20 + detail * 15 + color * 10 + text * 10
   );
+  const majorDifferences = [
+    subject < 0.5,
+    composition < 0.45,
+    detail < 0.45,
+  ].filter(Boolean).length;
+  const publicPenalty = (textSignals.common ? 8 : 0) + (patternType === "single" && subject < 0.72 ? 3 : 0);
+  const originalityAdjustment =
+    (patternType === "composite" && combination >= 0.68 ? 6 : 0) +
+    (detail >= 0.8 && subject >= 0.72 ? 5 : 0) -
+    (textSignals.common ? 4 : 0);
+  const divergencePenalty = majorDifferences * 14;
+  return Math.max(0, Math.min(100, rawScore - publicPenalty + originalityAdjustment - divergencePenalty));
+}
 
-  if (level === "high") {
-    return Math.min(100, Math.max(80, base));
-  }
-  if (level === "medium") {
-    return Math.min(79, Math.max(70, base));
-  }
-  return Math.min(base, 69);
+function scoreToLevel(score) {
+  if (score >= 80) return "high";
+  if (score >= 70) return "medium";
+  return "low";
 }
 
 function calculateConfidence(similarity) {
