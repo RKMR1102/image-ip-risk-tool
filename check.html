@@ -48,8 +48,13 @@
         </div>
 
         <div id="lensResults" class="result-box" hidden>
-          <h3>Google 搜图结果（前 10 项）</h3>
-          <p id="lensResultsHint" class="summary-copy">点击“对比此结果”即可与设计图分析。</p>
+          <div class="result-heading-row">
+            <div>
+              <h3>Google 搜图结果（前 10 项）</h3>
+              <p id="lensResultsHint" class="summary-copy">点击“对比此结果”即可与设计图分析。</p>
+            </div>
+            <a id="lensOpenLink" class="text-link" href="#" target="_blank" rel="noopener" hidden>在 Google Lens 中查看</a>
+          </div>
           <div id="lensResultsGrid" class="result-columns"></div>
         </div>
 

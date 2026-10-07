@@ -30,6 +30,7 @@ const confidenceSummary = document.getElementById("confidenceSummary");
 const lensResults = document.getElementById("lensResults");
 const lensResultsGrid = document.getElementById("lensResultsGrid");
 const lensResultsHint = document.getElementById("lensResultsHint");
+const lensOpenLink = document.getElementById("lensOpenLink");
 
 const state = {
   designDataUrl: "",
@@ -90,9 +91,6 @@ async function submitToGoogleLens(fileInput, label) {
   const originalLabel = button.textContent;
   button.disabled = true;
   button.textContent = "上传中...";
-  // 必须在用户点击事件仍然有效时打开窗口，否则 await 上传后会被浏览器拦截。
-  const lensWindow = window.open("about:blank", "_blank", "noopener,noreferrer");
-
   try {
     const dataUrl = await readFileAsDataUrl(file);
     const response = await fetch("/api/upload-image", {
@@ -106,9 +104,8 @@ async function submitToGoogleLens(fileInput, label) {
     }
 
     const lensUrl = `https://lens.google.com/uploadbyurl?url=${encodeURIComponent(result.url)}`;
-    if (lensWindow && !lensWindow.closed) {
-      lensWindow.location.href = lensUrl;
-    }
+    lensOpenLink.href = lensUrl;
+    lensOpenLink.hidden = false;
     button.textContent = "获取前十项...";
     const searchResponse = await fetch("/api/lens-search", {
       method: "POST",
@@ -120,10 +117,6 @@ async function submitToGoogleLens(fileInput, label) {
       throw new Error(searchResult.error || "搜图结果获取失败。");
     }
     renderLensResults(searchResult.matches || []);
-    if (lensWindow && !lensWindow.closed) lensWindow.focus();
-    if (!lensWindow) {
-      throw new Error("浏览器拦截了 Google Lens 新窗口，请允许本站弹窗后重试。");
-    }
   } catch (error) {
     window.alert(`无法打开 Google 搜图：${error.message}`);
   } finally {
@@ -139,7 +132,7 @@ function renderLensResults(matches) {
     lensResultsGrid.innerHTML = "";
     return;
   }
-  lensResultsHint.textContent = `已取得 ${matches.length} 项结果；点击“对比此结果”即可进行风险分析。`;
+  lensResultsHint.textContent = `已取得 ${matches.length} 项结果；点击“对比此结果”即可在当前页面分析。`;
   lensResultsGrid.innerHTML = matches.map((match) => `
     <article class="result-box lens-result-card">
       <img src="${escapeHtml(match.thumbnail)}" alt="搜图结果 ${match.rank}" loading="lazy" />

@@ -140,6 +140,20 @@ h2 {
   background: var(--card);
   backdrop-filter: blur(14px);
   box-shadow: var(--shadow);
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.panel:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 24px 64px rgba(78, 53, 31, 0.14);
+}
+
+.panel-header {
+  margin-bottom: 18px;
+}
+
+.panel-header p {
+  line-height: 1.65;
 }
 
 .info-panel {
@@ -227,6 +241,14 @@ h2 {
   border-style: dashed;
   cursor: pointer;
   overflow: hidden;
+  transition: border-color 180ms ease, background 180ms ease, transform 180ms ease;
+}
+
+.dropzone:hover,
+.dropzone:focus-within {
+  border-color: rgba(182, 86, 39, 0.56);
+  background: rgba(255, 249, 240, 0.96);
+  transform: translateY(-2px);
 }
 
 .dropzone input {
@@ -337,6 +359,19 @@ textarea {
   background: rgba(255, 255, 255, 0.82);
 }
 
+button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+button:focus-visible,
+a:focus-visible,
+textarea:focus-visible,
+input:focus-visible {
+  outline: 3px solid rgba(182, 86, 39, 0.28);
+  outline-offset: 3px;
+}
+
 .check-row {
   margin-top: 14px;
 }
@@ -395,6 +430,94 @@ textarea {
 .result-box,
 .library-item {
   padding: 16px;
+}
+
+#lensResults {
+  margin-top: 20px;
+  background: linear-gradient(180deg, rgba(255, 251, 245, 0.98), rgba(250, 240, 227, 0.9));
+}
+
+.result-heading-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.result-heading-row h3 {
+  margin-bottom: 6px;
+}
+
+.text-link {
+  flex: 0 0 auto;
+  padding: 9px 13px;
+  border: 1px solid rgba(138, 58, 20, 0.18);
+  border-radius: 999px;
+  color: var(--accent-strong);
+  background: rgba(255, 255, 255, 0.8);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.lens-result-card {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+  padding: 13px;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.lens-result-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 30px rgba(78, 53, 31, 0.12);
+}
+
+.lens-result-card img {
+  width: 100%;
+  height: 150px;
+  border-radius: 14px;
+  object-fit: cover;
+  background: rgba(245, 239, 231, 0.95);
+}
+
+.lens-result-card strong {
+  line-height: 1.45;
+}
+
+.lens-result-card p {
+  min-height: 20px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.lens-result-card .button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.lens-result-card .button-row a,
+.lens-result-card .button-row button {
+  flex: 1 1 120px;
+  padding: 9px 11px;
+  border: 1px solid rgba(138, 58, 20, 0.16);
+  border-radius: 12px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.88);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  cursor: pointer;
+}
+
+.lens-result-card .button-row button {
+  color: #fff;
+  border-color: transparent;
+  background: var(--accent);
 }
 
 .metric-card span,
@@ -543,6 +666,10 @@ textarea {
   .inline-form {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .result-heading-row {
+    flex-direction: column;
   }
 
   .match-card {
