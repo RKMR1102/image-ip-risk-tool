@@ -27,6 +27,9 @@ const suggestions = document.getElementById("suggestions");
 const analysisSummary = document.getElementById("analysisSummary");
 const referenceSummary = document.getElementById("referenceSummary");
 const confidenceSummary = document.getElementById("confidenceSummary");
+const lensResults = document.getElementById("lensResults");
+const lensResultsGrid = document.getElementById("lensResultsGrid");
+const lensResultsHint = document.getElementById("lensResultsHint");
 
 const state = {
   designDataUrl: "",
@@ -100,16 +103,74 @@ async function submitToGoogleLens(fileInput, label) {
       throw new Error(result.error || "图片上传失败。");
     }
 
-    window.open(
+    const lensWindow = window.open(
       `https://lens.google.com/uploadbyurl?url=${encodeURIComponent(result.url)}`,
       "_blank",
       "noopener"
     );
+    button.textContent = "获取前十项...";
+    const searchResponse = await fetch("/api/lens-search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imageUrl: result.url }),
+    });
+    const searchResult = await searchResponse.json();
+    if (!searchResponse.ok) {
+      throw new Error(searchResult.error || "搜图结果获取失败。");
+    }
+    renderLensResults(searchResult.matches || []);
+    if (lensWindow && !lensWindow.closed) lensWindow.focus();
   } catch (error) {
     window.alert(`无法打开 Google 搜图：${error.message}`);
   } finally {
     button.disabled = false;
     button.textContent = originalLabel;
+  }
+}
+
+function renderLensResults(matches) {
+  lensResults.hidden = false;
+  if (!matches.length) {
+    lensResultsHint.textContent = "未取得可展示的结果，请在 Google Lens 页面查看。";
+    lensResultsGrid.innerHTML = "";
+    return;
+  }
+  lensResultsHint.textContent = `已取得 ${matches.length} 项结果；点击“对比此结果”即可进行风险分析。`;
+  lensResultsGrid.innerHTML = matches.map((match) => `
+    <article class="result-box lens-result-card">
+      <img src="${escapeHtml(match.thumbnail)}" alt="搜图结果 ${match.rank}" loading="lazy" />
+      <strong>${match.rank}. ${escapeHtml(match.title)}</strong>
+      <p>${escapeHtml(match.source || "未知来源")}</p>
+      <div class="button-row">
+        <a href="${escapeHtml(match.link)}" target="_blank" rel="noopener">查看来源</a>
+        <button type="button" data-lens-image="${escapeHtml(match.image)}">对比此结果</button>
+      </div>
+    </article>
+  `).join("");
+  lensResultsGrid.querySelectorAll("[data-lens-image]").forEach((button) => {
+    button.addEventListener("click", () => compareLensResult(button.dataset.lensImage));
+  });
+}
+
+async function compareLensResult(imageUrl) {
+  try {
+    if (!state.designProfile) {
+      window.alert("请先上传设计图。");
+      return;
+    }
+    const response = await fetch(imageUrl, { mode: "cors" });
+    if (!response.ok) throw new Error("结果图片暂不允许读取，请打开来源页后下载再上传对比。");
+    const file = new File([await response.blob()], "google-lens-result.jpg", { type: response.headers.get("content-type") || "image/jpeg" });
+    const result = await ImageRiskCore.buildProfileFromFile(file);
+    const comparison = analyzeReferenceOnly({ designProfile: state.designProfile, referenceProfile: result.profile });
+    state.referenceDataUrl = result.dataUrl;
+    state.referenceProfile = result.profile;
+    compareMatchPreview.src = result.dataUrl;
+    compareMatchPreview.hidden = false;
+    renderResult(comparison);
+    document.getElementById("analysisSummary").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (error) {
+    window.alert(`无法直接读取该结果图片：${error.message}`);
   }
 }
 
