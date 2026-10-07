@@ -99,6 +99,8 @@ function submitToGoogleLens(fileInput, label) {
 
   const originalParent = fileInput.parentElement;
   const originalNextSibling = fileInput.nextSibling;
+  const originalName = fileInput.name;
+  fileInput.name = "encoded_image";
   form.append(fileInput, imageContent);
   document.body.appendChild(form);
   form.submit();
@@ -108,6 +110,7 @@ function submitToGoogleLens(fileInput, label) {
   } else {
     originalParent.appendChild(fileInput);
   }
+  fileInput.name = originalName;
   form.remove();
 }
 
